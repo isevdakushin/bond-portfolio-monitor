@@ -1,0 +1,11 @@
+# Настройки сервера Streamlit для публикации.
+[server]
+headless = true
+# Наблюдатель за файлами нужен только при разработке (автоперезапуск при правке кода);
+# в облаке он может подвешивать сервер, поэтому отключён.
+fileWatcherType = "none"
+runOnSave = false
+maxUploadSize = 50
+
+[browser]
+gatherUsageStats = false
