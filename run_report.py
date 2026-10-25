@@ -25,6 +25,7 @@ from core.snapshots import compare as compare_snapshots
 from core.snapshots import inherit_targets, order_snapshots
 from core.signals import relative_value, spread_changes
 from core.market import check_file_claims, curves_between, load_market
+from core import corrections
 from core.config import load_config
 from core.loader import LoadError, load_snapshot
 from core.quality import run_checks, summary
@@ -39,6 +40,7 @@ def main(argv=None):
     ap.add_argument("--config", help="путь к config.yaml")
     ap.add_argument("--out", default="output", help="папка для результатов")
     ap.add_argument("--no-market", action="store_true", help="не загружать рыночные данные")
+    ap.add_argument("--corrections", help="файл поправок аналитика (JSON, выгружается из интерфейса)")
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config)
@@ -51,6 +53,18 @@ def main(argv=None):
     print(f"Файл: {snap.source_name}")
     print(f"Дата снимка: {snap.as_of:%d.%m.%Y}" if snap.as_of else "Дата снимка: не определена")
     print(f"Позиций: {len(snap.positions)}; листы: {snap.sheet_names}")
+
+    corr_log = None
+    if args.corrections:
+        try:
+            items = corrections.from_json(Path(args.corrections).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            print(f"Файл поправок не загружен: {e}")
+            items = []
+        snap, corr_log = corrections.apply(snap, items)
+        print("\nПоправки аналитика (исходный файл не изменён):")
+        for _, r in corr_log.iterrows():
+            print(f"  {r['Позиция']} — {r['Поле']}: {r['Было']} → {r['Стало']} [{r['Статус']}]. Основание: {r['Основание']}")
 
     issues = run_checks(snap, cfg)
     s = summary(issues)
@@ -189,6 +203,7 @@ def main(argv=None):
     print("Стресс-тест (P&L, % NAV):")
     for _, r in res.stress["summary"].iterrows():
         print(f"  {r['Сценарий']}: {r['P&L портфеля, % NAV'] * 100:+.2f}%")
+    res.corrections = corr_log
     rep = build_report(res)
     rpath = out / f"report_{stem}.html"
     rpath.write_text(rep.html, encoding="utf-8")

@@ -266,6 +266,8 @@ def _check_totals(p, snap, tol, fee, iss):
             "ytm": ("Средневзвешенная YTM", tol["ytm"], lambda x: pct(x, 3)),
             "gspread": ("Средневзвешенный G-spread, бп", tol["gspread_bp"], lambda x: num(x, 1)),
             "mod_duration": ("Средневзвешенная mod. duration", tol["duration"], lambda x: num(x, 3))}
+    corrected = getattr(snap, "corrected_fields", set()) or set()
+    after_fix = " Ожидаемо: итог файла посчитан до поправок аналитика."
     t = snap.file_totals
     if t:
         for k, (label, tl, f) in spec.items():
@@ -273,6 +275,10 @@ def _check_totals(p, snap, tol, fee, iss):
             if v is None:
                 continue
             if abs(v - calc[k]) > tl:
+                if k in corrected:
+                    iss.add("Инфо", "Итоги листа портфеля", f"{label}: итог в файле отличается от расчёта.{after_fix}",
+                            field=f"строка {t['excel_row']}", file_value=f(v), expected=f(calc[k]))
+                    continue
                 iss.add("Ошибка", "Итоги листа портфеля", f"{label}: итог в файле не совпадает с расчётом по позициям.",
                         field=f"строка {t['excel_row']}", file_value=f(v), expected=f(calc[k]))
             else:
@@ -290,6 +296,11 @@ def _check_totals(p, snap, tol, fee, iss):
         if v is None:
             continue
         if abs(v - calc_v) > dtol[k]:
+            src_field = "ytm" if k.startswith("ytm") else k
+            if src_field in corrected:
+                iss.add("Инфо", "Дашборд", f"«{m[k]['label']}»: значение на дашборде отличается от расчёта.{after_fix}",
+                        field=f"00 Dashboard, строка {m[k]['row']}", file_value=dfmtf[k](v), expected=dfmtf[k](calc_v))
+                continue
             iss.add("Ошибка", "Дашборд", f"«{m[k]['label']}»: текущее значение на дашборде не совпадает с расчётом.",
                     field=f"00 Dashboard, строка {m[k]['row']}", file_value=dfmtf[k](v), expected=dfmtf[k](calc_v))
     if m.get("ytm_gross") and m.get("ytm_net") and m["ytm_gross"].get("target") and m["ytm_net"].get("target"):
@@ -318,8 +329,12 @@ def _check_allocation(p, snap, tol, iss):
             continue
         calc = by_sleeve.get(r["portfolio_sleeve"], 0.0)
         if r["current"] is not None and pd.notna(r["current"]) and abs(r["current"] - calc) > tol["weight_pp"] / 100:
-            iss.add("Ошибка", "Аллокация", "Текущая доля на листе Allocation не совпадает с суммой весов позиций.",
-                    r["sleeve"], "Current", pct(r["current"]), pct(calc))
+            if {"weight", "sleeve"} & (getattr(snap, "corrected_fields", set()) or set()):
+                iss.add("Инфо", "Аллокация", "Текущая доля на листе Allocation отличается от суммы весов позиций. "
+                        "Ожидаемо: лист посчитан до поправок аналитика.", r["sleeve"], "Current", pct(r["current"]), pct(calc))
+            else:
+                iss.add("Ошибка", "Аллокация", "Текущая доля на листе Allocation не совпадает с суммой весов позиций.",
+                        r["sleeve"], "Current", pct(r["current"]), pct(calc))
         if r["gap"] is not None and pd.notna(r["gap"]) and r["current"] is not None and pd.notna(r["current"]):
             if abs(r["gap"] - (r["target"] - r["current"])) > 1e-6:
                 iss.add("Предупреждение", "Аллокация", "Gap to target ≠ Target − Current.", r["sleeve"], "Gap",
@@ -342,7 +357,10 @@ def _check_breakdown(p, snap, tol, iss):
             fv, cv = vals.get(name, 0.0), float(calc.get(name, 0.0))
             if abs(fv - cv) > tol["weight_pp"] / 100:
                 bad.append(f"{name}: {pct(fv)} в файле vs {pct(cv)} по позициям")
-        if bad:
+        if bad and {col, "weight"} & (getattr(snap, "corrected_fields", set()) or set()):
+            iss.add("Инфо", "Breakdown", f"Распределение по {label} на листе Breakdown отличается от позиций "
+                    "(ожидаемо: лист посчитан до поправок аналитика): " + "; ".join(bad), field="03 Breakdown")
+        elif bad:
             iss.add("Ошибка", "Breakdown", f"Распределение по {label} на листе Breakdown расходится с позициями: "
                     + "; ".join(bad), field="03 Breakdown")
         else:

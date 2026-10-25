@@ -32,6 +32,7 @@ class Results:
     market_prev: Market | None = None
     comparison: Comparison | None = None
     spread_changes: pd.DataFrame | None = None
+    corrections: pd.DataFrame | None = None    # журнал поправок аналитика (если были)
     estimate: Estimate | None = None
     stress: dict | None = None
     notes: list = field(default_factory=list)

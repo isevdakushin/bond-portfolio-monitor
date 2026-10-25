@@ -13,6 +13,8 @@ import ui_analytics
 import ui_gspread
 import ui_market
 import ui_compare
+import ui_corrections
+from core.corrections import apply as apply_corrections
 import ui_estimate
 import ui_report
 from core.pipeline import run as run_pipeline
@@ -178,8 +180,10 @@ def main():
         _load.clear()
         st.rerun()
 
+    sources = {name: data}
     prev_snap, cmp_notes = None, []
     if prev_data:
+        sources[prev_name] = prev_data
         try:
             prev_snap = _load(prev_data, prev_name, ui_mapping.get_overrides(prev_name))
         except LoadError as e:
@@ -191,6 +195,10 @@ def main():
             name, prev_name = snap.source_name, prev_snap.source_name
         snap, inh = inherit_targets(snap, prev_snap)
         cmp_notes += inh
+    # Поправки аналитика — поверх текущего снимка; исходный файл не меняется.
+    snap_raw = snap
+    snap, corr_log = apply_corrections(snap_raw, ui_corrections.get(name))
+    ui_corrections.banner(corr_log)
     c1, c2, c3 = st.columns(3)
     c1.metric("Дата снимка", snap.as_of.strftime("%d.%m.%Y") if snap.as_of else "не найдена")
     c2.metric("Позиций", len(snap.positions))
@@ -244,6 +252,7 @@ def main():
     res = run_pipeline(snap, cfg, prev=prev_snap, market=mk, market_prev=mk_prev, fred_key=key,
                        curves_hist=_curves(snap.as_of, cfg["gspread"]["implied_date_window_days"]))
     res.notes = cmp_notes + res.notes
+    res.corrections = corr_log
     with tab_e:
         ui_estimate.render_estimate(res.estimate, mk.errors + [n for n in res.notes if "Оценка" in n])
         st.divider()
@@ -270,6 +279,8 @@ def main():
                      column_config={"Комментарий": st.column_config.TextColumn(width="large")})
         st.download_button("Скачать таблицу проверок (CSV)", issues.to_csv(index=False).encode("utf-8-sig"),
                            file_name="quality_checks.csv", mime="text/csv")
+        st.divider()
+        ui_corrections.render(snap_raw, name, corr_log, sources.get(name, data))
 
     with tab_p:
         cols = ["num", "sleeve", "weight", "isin", "issuer", "coupon", "maturity", "name_maturity", "ytm",

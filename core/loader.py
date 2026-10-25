@@ -106,6 +106,7 @@ class Snapshot:
     load_notes: list = field(default_factory=list)  # [{severity, category, message}]
     detected: dict = field(default_factory=dict)    # что и где распознано (для ручной правки в интерфейсе)
     sheet_texts: dict = field(default_factory=dict)  # {лист: [текстовые ячейки]} — все листы, кроме позиций
+    corrected_fields: set = field(default_factory=set)  # поля, изменённые поправками аналитика
 
 
 # ---------- вспомогательные преобразования ----------
@@ -531,7 +532,8 @@ def _parse_portfolio(grid, sheet, overrides, notes):
     df["label"] = [f"#{n} {s}" if n else str(s) for n, s in zip(df["num"], df["issuer_short"])]
     detected = {"sheet": sheet, "header_row": header_rows[0], "labels": [l for l in labels if l],
                 "columns": {k: labels[c] for k, c in colmap.items()},
-                "rating_columns": [labels[c] for c in rating_cols]}
+                "rating_columns": [labels[c] for c in rating_cols],
+                "colindex": {k: int(c) for k, c in colmap.items()}}   # номер колонки (с 0) — для выгрузки поправок
     return df, total, detected
 
 
