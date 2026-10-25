@@ -63,21 +63,18 @@ def _compute(data, name, ov, prev_data, prev_name, prev_ov, corrections, cfg, _k
 def _sidebar(cfg):
     st.sidebar.header("Данные")
     cur = st.sidebar.file_uploader("Текущий снимок портфеля", type=FILE_TYPES, key="cur",
-                                   help="Excel (.xlsx, .xlsm, .xls) или CSV. Листы и колонки распознаются "
-                                        "по названиям и содержимому.")
+                                   help="Excel (.xlsx, .xlsm, .xls) или CSV. Листы и колонки определяются по названиям и содержимому.")
     prev = st.sidebar.file_uploader("Предыдущий снимок для сравнения (необязательно)", type=FILE_TYPES, key="prev",
-                                    help="Используется для сигналов «аномальное расширение спреда»; полное "
-                                         "сравнение снимков — на шаге 7.")
+                                    help="Для сравнения снимков и сигнала по расширению спредов.")
     st.sidebar.download_button("Скачать шаблон файла (.xlsx)", build_template(), file_name="portfolio_template.xlsx",
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                               help="Пустой Excel с нужными листами и колонками; требования — во вкладке "
-                                    "«Методология и инструкция».")
+                               help="Пустой Excel с нужными листами и колонками. Требования — во вкладке «Методология».")
     sample = None
     samples = ([SAMPLE] if SAMPLE.exists() else []) + sorted((Path(__file__).parent / "samples").glob("*.*"))
     if cur is None and samples:
         choice = st.sidebar.selectbox("Или файл-пример", ["—"] + [p.name for p in samples], index=1,
-                                      help="Папка samples/ — тот же портфель в других форматах: CSV, отчёт с "
-                                           "разделами и рыночной стоимостью, файл с нестандартной колонкой.")
+                                      help="Тот же портфель в других форматах: CSV, отчёт с разделами и рыночной стоимостью, "
+                                           "файл с нестандартными колонками.")
         sample = next((p for p in samples if p.name == choice), None)
     prev_sample = None
     if prev is None and samples:
@@ -96,7 +93,7 @@ def _sidebar(cfg):
             "duration_over_maturity_error": st.number_input("Дюрация > срока: порог ошибки, лет", 0.0, 2.0,
                                                             float(q["duration_over_maturity_error"]), 0.05),
         }
-        st.caption("Значения по умолчанию и обоснования — в файле config.yaml.")
+        st.caption("Значения по умолчанию и их обоснование — в config.yaml.")
     c = cfg["concentration"]
     with st.sidebar.expander("Лимиты концентрации и допуски"):
         cov = {
@@ -110,7 +107,7 @@ def _sidebar(cfg):
         aov = {"allocation_gap_pp": st.number_input("Отклонение от целевой аллокации, п.п.", 0.0, 20.0,
                                                     float(cfg["analysis"]["allocation_gap_pp"]), 0.5),
                "fee": st.number_input("Комиссия, % годовых", 0.0, 5.0, cfg["analysis"]["fee"] * 100, 0.05) / 100}
-        st.caption("Лимит HY берётся из целей HY-сегментов листа Allocation.")
+        st.caption("Лимит HY — сумма целей HY-сегментов на листе Allocation.")
     sg = cfg["signals"]
     with st.sidebar.expander("Пороги сигналов по спредам"):
         sov = {
@@ -139,7 +136,7 @@ def _sidebar(cfg):
 
 def _methodology_only(cfg):
     st.divider()
-    st.subheader("Методология и инструкция")
+    st.subheader("Методология")
     ui_methodology.render(cfg)
 
 
@@ -147,13 +144,13 @@ def main():
     st.title("Анализ портфеля еврооблигаций")
     data, name, (prev_data, prev_name), cfg = _sidebar(load_config())
     if data is None:
-        st.info("Загрузите файл портфеля в панели слева. Требования к файлу и инструкция — ниже.")
+        st.info("Файл портфеля — в панели слева. Порядок работы и требования к файлу — ниже.")
         _methodology_only(cfg)
         return
     try:
         snap = _load(data, name, ui_mapping.get_overrides(name))
     except LoadError as e:
-        st.error(f"Файл не удалось разобрать: {e}")
+        st.error(f"Файл не прочитан: {e}")
         if e.detected.get("labels"):
             if ui_mapping.render(name, e.detected, expanded=True):
                 st.rerun()
@@ -171,7 +168,7 @@ def main():
         try:
             prev_snap = _load(prev_data, prev_name, ui_mapping.get_overrides(prev_name))
         except LoadError as e:
-            st.warning(f"Предыдущий снимок «{prev_name}» не удалось разобрать: {e}")
+            st.warning(f"Предыдущий снимок «{prev_name}» не прочитан: {e}")
             prev_data = prev_name = None
     # Какой файл текущий (более поздний) — чтобы взять его поправки аналитика.
     cur_name = order_snapshots(snap, prev_snap)[0].source_name if prev_snap is not None else name
@@ -195,7 +192,7 @@ def main():
     tab_q, tab_a, tab_mk, tab_g, tab_s, tab_r, tab_c, tab_e, tab_rep, tab_p, tab_m = st.tabs(
         ["1. Качество данных", "2. Аналитика", "3. Рыночные данные", "4. G-spread", "5. Сигналы по спредам",
          "6. Правила добора", "7. Сравнение снимков", "8. Оценка на сегодня и стресс", "9. Отчёт",
-         "Позиции (как загружены)", "Методология и инструкция"])
+         "Позиции (как загружены)", "Методология"])
 
     with tab_m:
         ui_methodology.render(cfg)
@@ -226,18 +223,18 @@ def main():
 
     with tab_g:
         if res.gspread is None:
-            st.warning("Нет кривой UST на дату снимка — пересчёт G-spread невозможен (подстановок нет).")
+            st.warning("Нет кривой UST на дату снимка, G-spread не пересчитан.")
         else:
             ui_gspread.render(res.gspread, cfg)
 
     with tab_s:
         if cfg["signals"]["spread_source"] == "recomputed" and res.gspread is None:
-            st.warning("Пересчитанный G-spread недоступен — сигналы считаются по G-spread из файла.")
+            st.warning("Пересчёта G-spread нет, сигналы — по G-spread из файла.")
         ui_signals.render(res.signals, res.spread_changes, cfg, prev_snap)
 
     with tab_r:
         if res.rules is None:
-            st.warning("Нет рыночных данных — правила добора не проверены.")
+            st.warning("Нет рыночных данных, правила добора не проверены.")
         else:
             ui_rules.render(res.rules, mk, snap.as_of)
 
@@ -254,7 +251,7 @@ def main():
 
     with tab_p:
         if res.corrections is not None and (res.corrections["Статус"] == "применена").any():
-            st.caption("С учётом поправок аналитика (исходные значения — в журнале поправок, вкладка «1. Качество данных»).")
+            st.caption("С поправками аналитика. Исходные значения — в журнале поправок на вкладке «1. Качество данных».")
         cols = ["num", "sleeve", "weight", "isin", "issuer", "coupon", "maturity", "name_maturity", "ytm",
                 "gspread", "mod_duration", "region", "country", "sector", "rating", "credit_bucket",
                 "instrument_type"]

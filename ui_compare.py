@@ -48,15 +48,15 @@ def _delta(v, kind):
 
 def render(cmp: Comparison | None, notes: list):
     if cmp is None:
-        st.info("Загрузите предыдущий снимок в боковой панели — здесь появится сравнение: изменения метрик, "
-                "аллокации, позиций и рейтингов, а также разложение изменения доходности портфеля.")
+        st.info("Нужен предыдущий снимок (панель слева): здесь будет сравнение метрик, аллокации, позиций "
+                "и рейтингов и разложение изменения YTM портфеля.")
         return
     for n in notes + cmp.notes:
         st.info(n)
     pos = cmp.positions
     n_new, n_rem = int((pos["Статус"] == "новая").sum()), int((pos["Статус"] == "выбыла").sum())
-    st.caption(f"Сравнение снимка {_d(cmp.cur_date)} с {_d(cmp.prev_date)}. Бумаги сопоставлены по ISIN, затем по "
-               f"названию, затем по эмитенту и погашению: осталось {int((pos['Статус'] == 'осталась').sum())}, "
+    st.caption(f"Сравнение снимка {_d(cmp.cur_date)} с {_d(cmp.prev_date)}. Сопоставление по ISIN, затем по названию, "
+               f"затем по эмитенту и погашению: осталось {int((pos['Статус'] == 'осталась').sum())}, "
                f"новых {n_new}, выбыло {n_rem}.")
 
     mt = cmp.metrics.set_index("key")
@@ -92,8 +92,8 @@ def render(cmp: Comparison | None, notes: list):
                       xaxis=dict(ticksuffix=" бп", gridcolor="rgba(137,135,129,0.25)", zeroline=False),
                       yaxis=dict(autorange="reversed"))
     st.plotly_chart(fig, width="stretch", theme="streamlit")
-    st.caption(f"Итого YTM портфеля: {total:+.1f} бп. Сумма вкладов равна изменению. «Рынок UST» — сдвиг кривой "
-               "Treasury между датами снимков на срок каждой бумаги (по весам прошлого снимка).")
+    st.caption(f"Изменение YTM портфеля: {total:+.1f} бп, сумма вкладов. «Рынок UST» — сдвиг кривой Treasury "
+               "между датами снимков на срок каждой бумаги, по весам прошлого снимка.")
     with st.expander("Разложение G-spread и дюрации"):
         for key in ("G-spread, бп", "Mod. duration, лет"):
             st.markdown(f"**{key}**")

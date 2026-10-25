@@ -55,7 +55,7 @@ def test_report_single_snapshot(offline):
     for part in ("Главное", "Портфель и цели", "Рыночный фон", "Риски и сигналы", "Предложения по ребалансировке",
                  "Решение остаётся за аналитиком"):
         assert part in rep.text
-    assert "5,58%" in rep.text and "Увеличить IBHJ" in rep.text
+    assert "5,58%" in rep.text and "Довести IBHJ" in rep.text
     # Номера позиций (#19) и названия правил/бумаг — допустимы; остальное — только из реестра расчёта и цитат.
     bad = [t for t in _numbers_outside_registry(rep) if not re.search(rf"#{t}\b", rep.text)]
     assert bad == [], f"числа вне расчёта: {bad}"

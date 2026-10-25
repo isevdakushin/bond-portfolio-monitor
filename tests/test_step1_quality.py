@@ -59,7 +59,7 @@ def _has(issues, level, category, position_part=""):
 
 def test_known_issues_found(issues):
     assert _has(issues, "Ошибка", "Погашение", "Targa")
-    assert _has(issues, "Ошибка", "Рейтинг / bucket", "AbbVie")
+    assert _has(issues, "Ошибка", "Рейтинг / категория", "AbbVie")
     assert _has(issues, "Предупреждение", "Страна", "Millicom")
     assert _has(issues, "Предупреждение", "Страна", "ArcelorMittal")
     assert _has(issues, "Предупреждение", "Дашборд")   # целевая дюрация 6,46 vs текст 5,5–5,8
@@ -76,7 +76,7 @@ def test_no_false_alarms_on_consistent_parts(issues):
     # T-bills без ISIN — не ошибка формата ISIN
     assert not _has(issues, "Предупреждение", "ISIN", "T-bills")
     # «EM всего (вкл. EM HY ...)» сверяется как EM (28%), а не как HY
-    assert issues["Комментарий"].str.contains("EM всего (Region = EM) = 28.0%", regex=False).any()
+    assert issues["Комментарий"].str.contains("EM всего (Region = EM) = 28,0%", regex=False).any()
 
 
 def test_adani_duration_exceeds_maturity(issues):

@@ -19,24 +19,25 @@ def _style(df, col="Сигнал"):
 def render(rv: pd.DataFrame, changes: pd.DataFrame | None, cfg, prev_snap=None):
     s = cfg["signals"]
     src = "из файла" if s["spread_source"] == "file" else "пересчитанный по кривой Treasury"
-    slope = rv.attrs.get("slope", 0.0)
-    st.caption(f"Пиры бумаги — облигации той же рейтинговой группы с дюрацией в пределах ±{s['duration_window']:g} "
-               f"лет (окно расширяется, если пиров меньше {s['min_peers']}). "
-               + (f"Спреды пиров приведены к дюрации бумаги: наклон {slope:.1f} бп на год дюрации (оценён по "
-                  "портфелю). " if s.get("duration_adjust", True) else "")
-               + f"G-spread — {src}. Сигнал «шире группы»: премия к медиане пиров больше {s['wide_abs_bp']:g} бп "
-                 f"и больше {s['wide_rel'] * 100:g}% медианы.")
+    slope = f"{rv.attrs.get('slope', 0.0):.1f}".replace(".", ",")
+    window = f"{s['duration_window']:g}".replace(".", ",")
+    st.caption(f"Пиры — бумаги того же рейтинга с дюрацией ±{window} г. (при менее чем "
+               f"{s['min_peers']} пирах окно расширяется). "
+               + (f"Спреды пиров приведены к дюрации бумаги: {slope} бп на год (наклон по портфелю). "
+                  if s.get("duration_adjust", True) else "")
+               + f"G-spread — {src}. «Шире группы» — премия к медиане пиров больше {s['wide_abs_bp']:g} бп "
+                 f"и больше {s['wide_rel'] * 100:g}%.")
 
     wide = rv[rv["Сигнал"] == "шире группы"]
     narrow = rv[rv["Сигнал"] == "уже группы"]
     k = st.columns(3)
-    k[0].metric("Шире группы", len(wide), help="Рынок закладывает риск сверх рейтинга.")
-    k[1].metric("Уже группы", len(narrow), help="Спред меньше, чем у пиров: мало компенсации за риск.")
+    k[0].metric("Шире группы", len(wide), help="Премия к пирам: рынок видит риск выше рейтинга.")
+    k[1].metric("Уже группы", len(narrow), help="Спред ниже пиров: слабая компенсация за риск.")
     k[2].metric("Бумаг в анализе", len(rv))
 
-    st.subheader("Рынок закладывает риск сверх рейтинга")
+    st.subheader("Шире пиров того же рейтинга")
     if wide.empty:
-        st.success("Нет бумаг со спредом заметно шире пиров.")
+        st.success("Бумаг заметно шире пиров нет.")
     for _, r in wide.iterrows():
         rel = "" if r["Надёжность"] == "достаточно пиров" else f" · ⚠ {r['Надёжность']}"
         st.markdown(f"- **{r['Позиция']}** ({r['Рейтинг']}, {r['Регион']}, MD {r['Mod. duration']:.1f}): "
@@ -46,7 +47,7 @@ def render(rv: pd.DataFrame, changes: pd.DataFrame | None, cfg, prev_snap=None):
         st.caption("Уже группы: " + "; ".join(f"{r['Позиция']} ({r['Премия, бп']:+.0f} бп"
                                               + ("" if r["Надёжность"] == "достаточно пиров" else f", {r['Надёжность']}")
                                               + ")" for _, r in narrow.iterrows())
-                   + ". В группе из 2–3 бумаг широкая бумага делает остальные «узкими» — оценивайте вместе.")
+                   + ". В группе из 2–3 бумаг одна широкая бумага делает остальные «узкими», смотреть вместе.")
 
     st.subheader("Спред и дюрация")
     fig = go.Figure()
@@ -82,15 +83,15 @@ def render(rv: pd.DataFrame, changes: pd.DataFrame | None, cfg, prev_snap=None):
 
     st.subheader("Аномальное расширение спреда между снимками")
     if changes is None:
-        st.info("Загрузите предыдущий снимок в боковой панели — здесь появятся бумаги, у которых спред вырос "
-                "сильнее, чем у их рейтинговой группы.")
+        st.info("Нужен предыдущий снимок (панель слева): здесь будут бумаги, спред которых вырос сильнее "
+                "их рейтинговой группы.")
         return
     if changes.empty:
-        st.info("Нет бумаг, общих для обоих снимков, с G-spread в обоих файлах.")
+        st.info("Нет общих бумаг с G-spread в обоих снимках.")
         return
     an = changes[changes["Сигнал"] == "аномальное расширение"]
-    st.caption(f"Сравнение с {prev_snap.as_of:%d.%m.%Y}. Порог: изменение спреда больше медианного изменения "
-               f"рейтинговой группы на {s['widening_abs_bp']:g} бп. Бумаг в сравнении: {len(changes)}." if prev_snap
+    st.caption(f"Сравнение с {prev_snap.as_of:%d.%m.%Y}. Сигнал — расширение больше медианы рейтинговой группы "
+               f"на {s['widening_abs_bp']:g} бп. Бумаг в сравнении: {len(changes)}." if prev_snap
                and prev_snap.as_of else "")
     if an.empty:
         st.success("Аномальных расширений нет.")

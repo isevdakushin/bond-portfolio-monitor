@@ -43,7 +43,7 @@ def _source_line(label, url, obs_date, fetched_at, how, extra=""):
 def render(m: Market, dashboard_texts):
     if m.errors:
         for e in m.errors:
-            st.warning(e + " Значение не показывается — подстановок нет.")
+            st.warning(e + " Значение не показано.")
     ca, cl = m.curve_asof, m.curve_latest
 
     st.subheader("Ключевые уровни")
@@ -78,8 +78,8 @@ def render(m: Market, dashboard_texts):
                  "Расхождение": f"{c['diff_bp']:+.0f} бп", "Статус": "совпадает" if c["ok"] else "расходится"}
                 for c in claims]
         st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-        st.caption("Допуск 1 бп. Расхождение может означать, что в файле указан уровень на другое время дня "
-                   "(Treasury публикует цены закрытия).")
+        st.caption("Допуск 1 бп. Расхождение обычно значит, что в файле уровень на другое время дня "
+                   "(Treasury публикует закрытие).")
 
     if ca:
         st.subheader("Кривая доходности UST (par yield)")

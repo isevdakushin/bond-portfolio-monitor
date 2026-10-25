@@ -28,7 +28,7 @@ def test_dates_and_order(pair):
     cur, prev = pair
     assert cur.as_of == dt.date(2026, 10, 14) and prev.as_of == dt.date(2026, 9, 14)
     c, p, note = order_snapshots(prev, cur)          # перепутанный порядок исправляется
-    assert c is cur and "обратном порядке" in note
+    assert c is cur and "перепутаны" in note
 
 
 def test_positions_new_removed_and_flags(pair):

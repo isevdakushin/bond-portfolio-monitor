@@ -114,20 +114,35 @@ def _quote(snap: Snapshot, must: tuple, any_of: tuple = ()):
 def _overweights(snap: Snapshot, exclude_kw: str = "") -> str:
     a = snap.allocation
     if a is None or a.empty:
-        return "целевая аллокация в файле не найдена"
+        return "целевой аллокации в файле нет"
     cur = snap.positions.groupby("sleeve")["weight"].sum()
     items = []
     for _, r in a.iterrows():
         c = float(cur.get(r.get("portfolio_sleeve"), 0.0))
         gap = c - r["target"]
         if gap > 1e-9 and exclude_kw not in str(r["sleeve"]).lower():
-            items.append(f"{r['sleeve']} (перевес +{gap * 100:.1f} п.п.)")
-    return "сегменты в перевесе к целевой аллокации: " + ", ".join(items) if items else "перевесов нет"
+            items.append(f"{r['sleeve']} (+{_p(gap, 1)} п.п.)")
+    return "за счёт сегментов в перевесе: " + ", ".join(items) if items else "перевесов нет"
 
 
 def _funding(snap: Snapshot, must, any_of, exclude_kw):
     q = _quote(snap, must, any_of)
-    return f"по стратегии в файле: «{q}»" if q else _overweights(snap, exclude_kw)
+    return f"по стратегии: «{q}»" if q else _overweights(snap, exclude_kw)
+
+
+def _p(x, d=2):
+    """Процент с десятичной запятой: 0.0511 -> «5,11»."""
+    return f"{x * 100:.{d}f}".replace(".", ",")
+
+
+def _g(x):
+    return f"{x * 100:g}".replace(".", ",")
+
+
+def _step(row) -> str:
+    """«Лестница, шаг 1: 10Y 5,10–5,15% → …» -> «шаг 1 (5,10–5,15%)»."""
+    m = re.match(r"Лестница, (шаг \d+): 10Y ([\d,]+–[\d,]+%)", row["Правило"])
+    return f"{m.group(1)} ({m.group(2)})" if m else row["Правило"]
 
 
 def _first_touch(series: pd.Series | None, since: dt.date, level: float, above=True):
@@ -186,12 +201,12 @@ def evaluate(snap: Snapshot, market, cfg: dict, today: dt.date | None = None) ->
         else:
             status = "не сработало"
         rows.append({
-            "Правило": f"Лестница, шаг {i}: 10Y UST {step['lower'] * 100:.2f}–{step['upper'] * 100:.2f}% → "
-                       f"+{step['add'] * 100:g}% NAV в Long IG" + (f" (до {tgt_after * 100:g}%)" if tgt_after else ""),
-            "Показатель": "10Y UST", "Порог": f"≥ {step['lower'] * 100:.2f}%",
-            "На дату снимка": f"{ust_snap * 100:.2f}% ({as_of:%d.%m.%Y})" if ust_snap is not None else "нет данных",
-            "Сейчас": f"{ust_last * 100:.2f}% ({ust_last_date:%d.%m.%Y})" if ust_last is not None else "нет данных",
-            "Касание с даты снимка": f"{touch[1] * 100:.2f}% ({touch[0]:%d.%m.%Y})" if touch else "нет",
+            "Правило": f"Лестница, шаг {i}: 10Y {_p(step['lower'])}–{_p(step['upper'])}% → "
+                       f"+{_g(step['add'])}% NAV в Long IG" + (f" (до {_g(tgt_after)}%)" if tgt_after else ""),
+            "Показатель": "10Y UST", "Порог": f"≥ {_p(step['lower'])}%",
+            "На дату снимка": f"{_p(ust_snap)}% ({as_of:%d.%m.%Y})" if ust_snap is not None else "нет данных",
+            "Сейчас": f"{_p(ust_last)}% ({ust_last_date:%d.%m.%Y})" if ust_last is not None else "нет данных",
+            "Касание с даты снимка": f"{_p(touch[1])}% ({touch[0]:%d.%m.%Y})" if touch else "нет",
             "Статус": status, "Источник правила": rules.source.get("ladder", "")})
         if not done and (now or touch):
             any_ladder_now = any_ladder_now or now
@@ -200,17 +215,17 @@ def evaluate(snap: Snapshot, market, cfg: dict, today: dt.date | None = None) ->
     if target > long_now + 1e-9:
         reached = [r for r in rows if r["Статус"] in ("сработало сейчас", "уровень достигался, сейчас ниже")]
         if any_ladder_now:
-            actions.append({"Приоритет": 1, "Действие": f"Довести {long_sleeve or 'Long IG'} с {long_now * 100:.1f}% "
-                            f"до {target * 100:.1f}% NAV (+{(target - long_now) * 100:.1f} п.п.)",
-                            "Основание": "10Y UST сейчас в зоне лестницы добора: " + "; ".join(r["Правило"] for r in reached),
+            actions.append({"Приоритет": 1, "Действие": f"Довести {long_sleeve or 'Long IG'} с {_p(long_now, 1)}% "
+                            f"до {_p(target, 1)}% NAV (+{_p(target - long_now, 1)} п.п.)",
+                            "Основание": "10Y в зоне лестницы: " + "; ".join(_step(r) for r in reached),
                             "Финансирование": fund_long})
         else:
-            actions.append({"Приоритет": 2, "Действие": f"Был ли выполнен добор {long_sleeve or 'Long IG'} до "
-                            f"{target * 100:.1f}% NAV (+{(target - long_now) * 100:.1f} п.п.) при касании уровней?",
-                            "Основание": "10Y UST достигал зон лестницы после даты снимка, сейчас ниже: "
-                                         + "; ".join(f"{r['Правило']} — касание {r['Касание с даты снимка']}" for r in reached),
-                            "Финансирование": fund_long + ". Если добор не сделан — по правилу ждать возврата 10Y "
-                                                          "в зону или календарного пересмотра"})
+            actions.append({"Приоритет": 2, "Действие": f"Проверить добор {long_sleeve or 'Long IG'} до "
+                            f"{_p(target, 1)}% NAV (+{_p(target - long_now, 1)} п.п.)",
+                            "Основание": "10Y заходил в зоны лестницы после снимка, сейчас ниже: "
+                                         + "; ".join(f"{_step(r)} — касание {r['Касание с даты снимка']}" for r in reached),
+                            "Финансирование": fund_long + ". Если добор не сделан — при возврате 10Y в зону "
+                                                          "или на календарном пересмотре"})
 
     # HY OAS → IBHJ
     if rules.hy_trigger_bp is not None:
@@ -220,8 +235,8 @@ def evaluate(snap: Snapshot, market, cfg: dict, today: dt.date | None = None) ->
         status = ("выполнено (доля уже на целевом уровне)" if done else "сработало сейчас" if now
                   else "уровень достигался, сейчас ниже" if touch else "не сработало")
         rows.append({
-            "Правило": f"HY OAS ≥ {rules.hy_trigger_bp:.0f} бп → {rules.hy_instrument} с {rules.hy_from * 100:g}% "
-                       f"до {rules.hy_to * 100:g}% NAV",
+            "Правило": f"HY OAS ≥ {rules.hy_trigger_bp:.0f} бп → {rules.hy_instrument} с {_g(rules.hy_from)}% "
+                       f"до {_g(rules.hy_to)}% NAV",
             "Показатель": "HY OAS (ICE BofA, FRED)", "Порог": f"≥ {rules.hy_trigger_bp:.0f} бп",
             "На дату снимка": f"{hy_snap:.0f} бп ({market.hy_asof[0]:%d.%m.%Y})" if hy_snap is not None else "нет данных",
             "Сейчас": f"{hy_last:.0f} бп ({hy_last_date:%d.%m.%Y})" if hy_last is not None else "нет данных",
@@ -229,11 +244,12 @@ def evaluate(snap: Snapshot, market, cfg: dict, today: dt.date | None = None) ->
             "Статус": status, "Источник правила": rules.source.get("hy", "")})
         if not done and (now or touch) and hy_now is not None:
             actions.append({"Приоритет": 1 if now else 2,
-                            "Действие": f"Увеличить {rules.hy_instrument} с {hy_now * 100:.1f}% до {rules.hy_to * 100:g}% "
-                                        f"NAV (+{(rules.hy_to - hy_now) * 100:.1f} п.п.)" if now else
-                                        f"Был ли увеличен {rules.hy_instrument} до {rules.hy_to * 100:g}% NAV?",
-                            "Основание": f"HY OAS {hy_last:.0f} бп на {hy_last_date:%d.%m.%Y} ≥ {rules.hy_trigger_bp:.0f} бп"
-                                         + (f"; впервые после снимка — {touch[0]:%d.%m.%Y}" if touch else ""),
+                            "Действие": f"Довести {rules.hy_instrument} с {_p(hy_now, 1)}% до {_g(rules.hy_to)}% "
+                                        f"NAV (+{_p(rules.hy_to - hy_now, 1)} п.п.)" if now else
+                                        f"Проверить, доведён ли {rules.hy_instrument} до {_g(rules.hy_to)}% NAV",
+                            "Основание": f"HY OAS {hy_last:.0f} бп на {hy_last_date:%d.%m.%Y} выше триггера "
+                                         f"{rules.hy_trigger_bp:.0f} бп"
+                                         + (f"; триггер пробит {touch[0]:%d.%m.%Y}" if touch else ""),
                             "Финансирование": fund_hy})
 
     # Календарь
@@ -242,20 +258,20 @@ def evaluate(snap: Snapshot, market, cfg: dict, today: dt.date | None = None) ->
     levels_reached = any(r["Статус"] in ("сработало сейчас", "уровень достигался, сейчас ниже", "выполнено (доля уже на уровне шага)")
                          for r in rows if r["Показатель"] == "10Y UST")
     cal_status = (f"пересмотр {passed[-1]:%d.%m.%Y} прошёл" if passed else
-                  f"ближайший пересмотр {reviews[0]:%d.%m.%Y} (через {(reviews[0] - today).days} дн.)" if reviews else "—")
+                  f"следующий пересмотр {reviews[0]:%d.%m.%Y} (через {(reviews[0] - today).days} дн.)" if reviews else "—")
     rows.append({
         "Правило": "Календарь: " + ", ".join(f"{d:%d.%m}" for d in next_reviews(rules.calendar, as_of, n=len(rules.calendar)))
-                   + f" — +{rules.calendar_add * 100:g}% NAV в Long IG, если уровни не пришли",
+                   + f" — +{_g(rules.calendar_add)}% NAV в Long IG, если уровни не пройдены",
         "Показатель": "дата", "Порог": "дата пересмотра", "На дату снимка": f"{as_of:%d.%m.%Y}",
-        "Сейчас": f"{today:%d.%m.%Y}", "Касание с даты снимка": "уровни лестницы достигались" if levels_reached else "уровни не достигались",
+        "Сейчас": f"{today:%d.%m.%Y}", "Касание с даты снимка": "уровни лестницы пройдены" if levels_reached else "уровни не пройдены",
         "Статус": cal_status, "Источник правила": rules.source.get("calendar", "")})
     if passed and not levels_reached and long_now < (rules.ladder[-1].get("target_after") or 1):
-        actions.append({"Приоритет": 1, "Действие": f"Календарный добор: +{rules.calendar_add * 100:g}% NAV в Long IG",
-                        "Основание": f"пересмотр {passed[-1]:%d.%m.%Y} прошёл, уровни лестницы не достигались",
+        actions.append({"Приоритет": 1, "Действие": f"Календарный добор: +{_g(rules.calendar_add)}% NAV в Long IG",
+                        "Основание": f"пересмотр {passed[-1]:%d.%m.%Y} прошёл, уровни лестницы не пройдены",
                         "Финансирование": fund_long})
     elif reviews and not actions:
-        actions.append({"Приоритет": 3, "Действие": f"Ближайший календарный пересмотр — {reviews[0]:%d.%m.%Y}",
-                        "Основание": "уровни правил сейчас не достигнуты", "Финансирование": "—"})
+        actions.append({"Приоритет": 3, "Действие": f"Следующий календарный пересмотр — {reviews[0]:%d.%m.%Y}",
+                        "Основание": "уровни правил не пройдены", "Финансирование": "—"})
 
     return {"rules": rules, "table": pd.DataFrame(rows), "actions": sorted(actions, key=lambda a: a["Приоритет"]),
             "long_now": long_now, "hy_now": hy_now, "today": today, "next_reviews": reviews}

@@ -95,7 +95,7 @@ def render(an: Analysis):
     ccfg = {"Доля": st.column_config.NumberColumn("Доля, %", format="%.1f"),
             "Лимит": st.column_config.NumberColumn("Лимит, %", format="%.1f")}
     if flagged.empty:
-        st.success("Все лимиты концентрации соблюдены.")
+        st.success("Лимиты концентрации соблюдены.")
     else:
         st.dataframe(_style_status(_pct(flagged, ["Доля", "Лимит"])), hide_index=True, width="stretch",
                      column_config=ccfg)
@@ -123,7 +123,7 @@ def render(an: Analysis):
                      "Вклад в дюрацию": st.column_config.NumberColumn(format="%.2f"),
                      "Доля DTS": st.column_config.NumberColumn("Доля кредитного риска (DTS), %", format="%.1f",
                                                                help="DTS = mod. duration × G-spread. Доля группы "
-                                                                    "в чувствительности портфеля к спредам."),
+                                                                    "в спредовом риске портфеля."),
                  })
 
     st.subheader("Позиции: вклад в метрики и кредитный риск")

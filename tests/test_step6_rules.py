@@ -73,7 +73,7 @@ def test_evaluation_on_market_data(snap, mk):
     assert list(ladder["Статус"]) == ["уровень достигался, сейчас ниже"] * 2
     assert "23.09.2026" in ladder.iloc[0]["Касание с даты снимка"] and "29.09.2026" in ladder.iloc[1]["Касание с даты снимка"]
     top = ev["actions"][0]
-    assert top["Действие"].startswith("Увеличить IBHJ с 4.5% до 8%") and "Medium IG" in top["Финансирование"]
+    assert top["Действие"].startswith("Довести IBHJ с 4,5% до 8%") and "Medium IG" in top["Финансирование"]
     assert ev["next_reviews"][0] == dt.date(2026, 11, 15)
 
 

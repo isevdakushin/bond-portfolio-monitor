@@ -30,24 +30,24 @@ def banner(log: pd.DataFrame):
         return
     n_ok = int((log["Статус"] == "применена").sum())
     n_bad = len(log) - n_ok
-    msg = f"**Применено поправок аналитика: {n_ok}.** Исходный файл не изменён; все расчёты и отчёт — по исправленным данным."
+    msg = f"**Поправок аналитика: {n_ok}.** Расчёты и отчёт — по исправленным данным, исходный файл не изменён."
     if n_bad:
-        msg += f" Не применено: {n_bad} (значение в файле изменилось или позиции нет) — см. «Качество данных»."
+        msg += f" Не применено: {n_bad} (значение в файле изменилось или позиции нет), см. «Качество данных»."
     st.warning(msg)
 
 
 def render(snap_raw, name: str, log: pd.DataFrame, source: bytes):
     st.subheader("Поправки аналитика")
-    st.caption("Исправления поверх файла компании: исходный файл не меняется, каждая поправка — с основанием и в журнале "
-               "отчёта. Поправка применяется, только если значение в файле всё ещё равно «было», поэтому файл поправок "
-               "можно безопасно загрузить к следующему снимку.")
+    st.caption("Исправления поверх файла компании: файл не меняется, каждая поправка — с основанием и попадает в "
+               "журнал отчёта. Поправка применяется, только если в файле всё ещё значение «было», поэтому файл "
+               "поправок можно подгружать и к следующему снимку.")
     items = get(name)
     done = {(c["label"], c["field"]) for c in items}
 
     sugg = [s for s in C.suggest(snap_raw) if (s["label"], s["field"]) not in done]
     if sugg:
-        st.markdown("**Подсказки** — значения следуют из самого файла или из расчёта; отметьте нужные и при необходимости "
-                    "поправьте значение и основание.")
+        st.markdown("**Подсказки** — значения следуют из самого файла или из расчёта. Нужные отмечаются галочкой, "
+                    "значение и основание можно править.")
         cur = snap_raw.positions.set_index("label")
         df = pd.DataFrame([{"Применить": False, "Позиция": s["label"], "Поле": C.FIELDS[s["field"]][0],
                             "Сейчас": C.fmt_value(s["field"], cur.loc[s["label"], s["field"]]),
@@ -99,7 +99,7 @@ def render(snap_raw, name: str, log: pd.DataFrame, source: bytes):
             st.rerun()
         c2.download_button("Файл поправок (JSON)", C.to_json(items).encode("utf-8"),
                            file_name=f"corrections_{Path(name).stem}.json", mime="application/json",
-                           help="Сохраните, чтобы применить те же поправки к следующему снимку.")
+                           help="Те же поправки для следующего снимка.")
         xlsx = C.corrected_excel(source, snap_raw, log) if Path(name).suffix.lower() in (".xlsx", ".xlsm") else None
         if xlsx:
             c3.download_button("Исправленный Excel", xlsx, file_name=f"{Path(name).stem}_исправлено.xlsx",

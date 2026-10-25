@@ -122,8 +122,7 @@ def analyze(snap: Snapshot, cfg: dict) -> Analysis:
     allocation, proforma = _allocation(snap, p, a_cfg)
     if proforma:
         targets["Pro forma при целевой аллокации"] = targets["key"].map(proforma)
-        notes.append("Pro forma — метрики портфеля, если доли sleeve привести к целевым, сохранив средние "
-                     "метрики бумаг внутри каждого sleeve. Это оценка, а не прогноз.")
+        notes.append("Pro forma — метрики при целевых долях sleeve и прежнем составе бумаг внутри sleeve.")
 
     breakdowns = {
         "Sleeve": _breakdown(p, "sleeve", "Sleeve"),
@@ -221,24 +220,24 @@ def _concentration(p, snap, metrics, c, allocation):
 
     eligible = p[(p["instrument_type"] == "bond")]
     for name, w in eligible.groupby("issuer_key")["weight"].sum().sort_values(ascending=False).items():
-        add("Эмитент", name, float(w), c["issuer_max"], "config: issuer_max (UCITS 5/10/40)")
+        add("Эмитент", name, float(w), c["issuer_max"], "допущение (UCITS 5/10/40)")
     home = set(c["home_countries"])
     for name, w in p[p["instrument_type"] != "cash"].groupby("country")["weight"].sum() \
             .sort_values(ascending=False).items():
         if name in home:
             continue
-        add("Страна", name, float(w), c["country_max"], "config: country_max (кроме " + ", ".join(home) + ")")
+        add("Страна", name, float(w), c["country_max"], "допущение (кроме " + ", ".join(home) + ")")
     for name, w in p[p["instrument_type"] != "cash"].groupby("sector_group")["weight"].sum() \
             .sort_values(ascending=False).items():
-        add("Сектор (укрупнённо)", name, float(w), c["sector_group_max"], "config: sector_group_max")
-    add("Регион", "EM всего", metrics["em_share"], c["em_total_max"], "дашборд компании: лимит EM ~30%")
+        add("Сектор (укрупнённо)", name, float(w), c["sector_group_max"], "допущение")
+    add("Регион", "EM всего", metrics["em_share"], c["em_total_max"], "дашборд: лимит EM ~30%")
 
-    hy_limit, hy_basis = c["hy_total_max_fallback"], "config: hy_total_max_fallback"
+    hy_limit, hy_basis = c["hy_total_max_fallback"], "допущение"
     if allocation is not None:
         hy_rows = allocation[allocation["Sleeve"].str.contains(r"\bHY\b", regex=True)]
         if not hy_rows.empty:
             hy_limit = float(hy_rows["Цель"].sum())
-            hy_basis = "сумма целей HY-сегментов листа Allocation: " + ", ".join(hy_rows["Sleeve"])
+            hy_basis = "цели HY-сегментов на листе Allocation: " + ", ".join(hy_rows["Sleeve"])
     add("Кредитное качество", "HY всего (ниже BBB-)", metrics["hy_share"], hy_limit, hy_basis)
 
     df = pd.DataFrame(rows)

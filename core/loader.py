@@ -227,7 +227,7 @@ def read_grids(data: bytes, name: str):
             raise
         except Exception:  # noqa: BLE001 — пробуем следующий формат
             continue
-    raise LoadError("Не удалось прочитать файл. Поддерживаются .xlsx, .xlsm, .xls и .csv.")
+    raise LoadError("Файл не читается. Поддерживаются .xlsx, .xlsm, .xls и .csv.")
 
 
 def _read_xlsx(data, notes):
@@ -254,8 +254,8 @@ def _read_xlsx(data, notes):
                     missing += 1
     if missing:
         notes.append({"severity": "Предупреждение", "category": "Структура",
-                      "message": f"В файле {missing} формул без сохранённых значений — такие ячейки читаются пустыми. "
-                                 "Откройте файл в Excel и сохраните его, чтобы значения пересчитались."})
+                      "message": f"{missing} формул без сохранённых значений — эти ячейки читаются пустыми. "
+                                 "Открыть файл в Excel и сохранить, чтобы формулы пересчитались."})
     return grids
 
 
@@ -277,7 +277,7 @@ def _read_xls(data, notes):
                     row.append(cell.value)
             rows.append(row)
         grids[sh.name] = rows
-    notes.append({"severity": "Инфо", "category": "Структура", "message": "Файл прочитан как старый Excel (.xls)."})
+    notes.append({"severity": "Инфо", "category": "Структура", "message": "Формат файла — .xls."})
     return grids
 
 
@@ -296,8 +296,8 @@ def _read_csv(data, notes):
         delim = ";" if sample.count(";") > sample.count(",") else ","
     rows = [[c if c.strip() != "" else None for c in r] for r in csv.reader(io.StringIO(text), delimiter=delim)]
     notes.append({"severity": "Инфо", "category": "Структура",
-                  "message": f"Файл прочитан как CSV (разделитель «{delim}»). В CSV только один лист — "
-                             "дашборд и целевая аллокация в нём отсутствуют."})
+                  "message": f"Формат файла — CSV (разделитель «{delim}»). Лист один: целей и аллокации "
+                             "в файле нет."})
     return {"CSV": rows}
 
 
@@ -439,29 +439,29 @@ def _parse_portfolio(grid, sheet, overrides, notes):
 
     missing = [" или ".join(COLUMN_LABELS[k] for k in alt) for alt in ESSENTIAL if not any(k in colmap for k in alt)]
     if missing:
-        raise LoadError(f"На листе «{sheet}» не найдены обязательные колонки: {'; '.join(missing)}. "
-                        "Укажите их вручную в блоке «Распознавание файла».",
+        raise LoadError(f"На листе «{sheet}» нет обязательных колонок: {'; '.join(missing)}. "
+                        "Указать вручную в блоке «Распознавание файла».",
                         detected={"sheet": sheet, "header_row": header_rows[0], "labels": [l for l in labels if l],
                                   "columns": {k: labels[c] for k, c in colmap.items()}})
     for k in IMPORTANT:
         if k not in colmap:
             notes.append({"severity": "Предупреждение", "category": "Структура",
-                          "message": f"Не найдена колонка «{COLUMN_LABELS[k]}» — связанные расчёты будут пропущены "
+                          "message": f"Нет колонки «{COLUMN_LABELS[k]}» — связанные расчёты пропущены "
                                      "(можно указать вручную в блоке «Распознавание файла»)."})
     if h["two"]:
         notes.append({"severity": "Инфо", "category": "Структура",
                       "message": f"Двухстрочный заголовок (строки {header_rows[0]}–{header_rows[1]})."})
     if "gspread" in colmap and norm(labels[colmap["gspread"]]) in ("spread", "спред"):
         notes.append({"severity": "Предупреждение", "category": "Структура",
-                      "message": f"Тип спреда в колонке «{labels[colmap['gspread']]}» не указан — считаем, что это G-spread."})
+                      "message": f"Тип спреда в колонке «{labels[colmap['gspread']]}» не указан — принят как G-spread."})
     ytm_label = norm(labels[colmap["ytm"]])
     if "ytw" in ytm_label or "worst" in ytm_label:
         notes.append({"severity": "Предупреждение", "category": "Структура",
-                      "message": f"Колонка «{labels[colmap['ytm']]}» — доходность к худшему исходу (YTW); используется как YTM."})
+                      "message": f"Колонка «{labels[colmap['ytm']]}» — YTW; используется как YTM."})
     if len(rating_cols) > 1:
         notes.append({"severity": "Инфо", "category": "Структура",
                       "message": "Несколько колонок рейтинга (" + ", ".join(labels[c] for c in rating_cols) +
-                                 ") — используется составной рейтинг: из трёх средний, из двух худший."})
+                                 ") — взят составной рейтинг: из трёх средний, из двух худший."})
 
     def get(row, key):
         c = colmap.get(key)
@@ -510,19 +510,19 @@ def _parse_portfolio(grid, sheet, overrides, notes):
             "credit_bucket": to_str(get(row, "credit_bucket")), "min_piece": to_float(get(row, "min_piece")),
         })
     if not rows:
-        raise LoadError(f"На листе «{sheet}» не найдено ни одной позиции под строкой заголовков.")
+        raise LoadError(f"На листе «{sheet}» под заголовками нет ни одной позиции.")
     df = pd.DataFrame(rows)
     if "sleeve" not in colmap and df["sleeve"].notna().any():
         notes.append({"severity": "Инфо", "category": "Структура",
-                      "message": "Колонки Sleeve нет — сегменты взяты из строк-разделов над группами бумаг."})
+                      "message": "Колонки Sleeve нет — сегменты взяты из строк-разделов."})
 
     df, total = _normalize_units(df, totals, notes)
     notes.append({"severity": "Инфо", "category": "Структура",
-                  "message": f"Лист «{sheet}», заголовки в строке {header_rows[0]}; загружено позиций: {len(df)}."})
+                  "message": f"Лист «{sheet}», заголовки в строке {header_rows[0]}, позиций: {len(df)}."})
     if total:
         notes.append({"severity": "Инфо", "category": "Структура",
-                      "message": f"Строка итогов (строка {total['excel_row']}) исключена из позиций и используется "
-                                 "только для сверки."})
+                      "message": f"Строка итогов ({total['excel_row']}) не считается позицией, "
+                                 "используется для сверки."})
 
     df["name_coupon"] = df["issuer"].map(parse_name_coupon)
     df["name_maturity"] = df["issuer"].map(parse_name_maturity)
@@ -548,14 +548,14 @@ def _normalize_units(df, totals, notes):
         total_mv = df["market_value"].sum()
         df["weight"] = df["market_value"] / total_mv
         notes.append({"severity": "Инфо", "category": "Единицы",
-                      "message": f"Колонки весов нет — веса рассчитаны из рыночной стоимости (сумма {total_mv:,.0f})."})
+                      "message": f"Колонки весов нет — веса посчитаны по рыночной стоимости (итого {total_mv:,.0f})."})
         for t in totals:
             t["weight"] = t["market_value"] / total_mv if t.get("market_value") else None
     wsum = df["weight"].sum(skipna=True)
     w_scale = 100 if 50 < wsum < 150 else 1
     if w_scale == 100:
         df["weight"] /= 100
-        notes.append({"severity": "Инфо", "category": "Единицы", "message": "Веса заданы в процентах — приведены к долям."})
+        notes.append({"severity": "Инфо", "category": "Единицы", "message": "Веса в процентах — переведены в доли."})
     y_scale = 1
     for col in ("ytm", "coupon"):
         med = df[col].median(skipna=True)
@@ -564,18 +564,18 @@ def _normalize_units(df, totals, notes):
             if col == "ytm":
                 y_scale = 100
             notes.append({"severity": "Инфо", "category": "Единицы",
-                          "message": f"Колонка {COLUMN_LABELS[col]} задана в процентах — приведена к долям."})
+                          "message": f"{COLUMN_LABELS[col]} в процентах — переведено в доли."})
     g_scale = 1
     med = df["gspread"].median(skipna=True)
     if pd.notna(med) and med != 0:
         if abs(med) < 0.1:
             g_scale = 10000
             notes.append({"severity": "Инфо", "category": "Единицы",
-                          "message": "G-spread задан в долях — приведён к базисным пунктам."})
+                          "message": "G-spread в долях — переведён в бп."})
         elif abs(med) < 15:
             g_scale = 100
             notes.append({"severity": "Инфо", "category": "Единицы",
-                          "message": "G-spread задан в процентах — приведён к базисным пунктам."})
+                          "message": "G-spread в процентах — переведён в бп."})
         df["gspread"] *= g_scale
 
     # Строка итогов: та, чей вес равен сумме весов позиций (промежуточные итоги разделов отбрасываются).
@@ -794,7 +794,7 @@ def load_snapshot(source, name: str | None = None, overrides: dict | None = None
             port = kw if kw and scores[kw] == max(scores.values()) else max(scores, key=scores.get)
             if kw != port and scores[port] >= 100:
                 notes.append({"severity": "Инфо", "category": "Структура",
-                              "message": f"Лист с позициями определён по содержимому: «{port}»."})
+                              "message": f"Лист с позициями найден по содержимому: «{port}»."})
 
     try:
         positions, totals, detected = _parse_portfolio(grids[port], port, overrides, notes)
@@ -821,10 +821,10 @@ def load_snapshot(source, name: str | None = None, overrides: dict | None = None
     sheets["breakdown"], breakdown = pick("breakdown", _parse_breakdown, lambda x: any(x.values()))
     if sheets["dashboard"] is None:
         notes.append({"severity": "Предупреждение", "category": "Структура",
-                      "message": "Не найдены целевые метрики (таблица «Текущий / Целевой») — сравнение с целью пропущено."})
+                      "message": "Целевых метрик нет (таблица «Текущий / Целевой») — сравнение с целью пропущено."})
     if sheets["allocation"] is None:
         notes.append({"severity": "Предупреждение", "category": "Структура",
-                      "message": "Не найдена целевая аллокация (таблица Sleeve / Target) — отклонения от цели не считаются."})
+                      "message": "Целевой аллокации нет (таблица Sleeve / Target) — отклонения от цели не считаются."})
 
     if allocation is not None and not allocation.empty:
         mapping = map_sleeves(allocation["sleeve"], positions["sleeve"])

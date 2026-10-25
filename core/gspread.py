@@ -41,12 +41,12 @@ def recompute(snap: Snapshot, curve: Curve, cfg: dict, curves_history: pd.DataFr
                "YTM": r["ytm"], "G-spread в файле": r["gspread"], "Срок, лет": None, "Mod. duration": r["mod_duration"],
                "UST на срок": None, "G (срок)": None, "UST на дюрацию": None, "G (дюрация)": None, "Комментарий": ""}
         if r["instrument_type"] != "bond":
-            rec["Комментарий"] = ("ETF без даты погашения — пересчёт не делается" if r["instrument_type"] == "fund"
-                                  else "денежная позиция — пересчёт не делается")
+            rec["Комментарий"] = ("ETF без даты погашения, не пересчитывается" if r["instrument_type"] == "fund"
+                                  else "денежная позиция, не пересчитывается")
             rows.append(rec)
             continue
         if pd.isna(r["ytm"]):
-            rec["Комментарий"] = "нет YTM — пересчёт невозможен"
+            rec["Комментарий"] = "нет YTM, не пересчитывается"
             rows.append(rec)
             continue
         mat = r["maturity"]

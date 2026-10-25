@@ -27,7 +27,7 @@ def render(name, detected: dict, as_of=None, expanded=False):
     current = get_overrides(name)
     with st.expander("Распознавание файла: лист, колонки, дата", expanded=expanded):
         st.caption(f"Лист с позициями: «{detected.get('sheet', '—')}», строка заголовков: "
-                   f"{detected.get('header_row', '—')}. Если что-то распознано неверно — исправьте и нажмите «Применить».")
+                   f"{detected.get('header_row', '—')}. Ошибки распознавания исправляются здесь, затем «Применить».")
         with st.form(f"map::{name}"):
             sheets = detected.get("sheets", [])
             sheet = st.selectbox("Лист с позициями", sheets,
@@ -41,8 +41,8 @@ def render(name, detected: dict, as_of=None, expanded=False):
                 label = COLUMN_LABELS[key] + (" *" if key in ESSENTIAL_KEYS else "")
                 chosen[key] = grid[i % 3].selectbox(label, options,
                                                     index=options.index(cur) if cur in options else 0, key=f"{name}-{key}")
-            st.caption("Поля со звёздочкой (\\*): нужно хотя бы одно из пар «Issuer / ISIN» и «Weight / Market value», "
-                       "а также YTM.")
+            st.caption("Звёздочка (\\*): нужны YTM и хотя бы по одному полю из пар «Issuer / ISIN» "
+                       "и «Weight / Market value».")
             date_val = st.date_input("Дата снимка (если не найдена в файле или неверна)",
                                      value=current.get("as_of") or as_of, format="DD.MM.YYYY")
             applied = st.form_submit_button("Применить")

@@ -92,52 +92,52 @@ def build(res: Results) -> Report:
     if ru:
         for act in ru["actions"]:
             if act["Приоритет"] == 1:
-                key_points.append(f"<b>Сработало правило стратегии.</b> {_e(f.quote(act['Основание']))} → "
-                                  f"{_e(f.quote(act['Действие']))}. Финансирование: {_e(f.quote(act['Финансирование']))}.")
+                key_points.append(f"<b>{_e(f.quote(act['Действие']))}.</b> {_e(f.quote(act['Основание']))}. "
+                                  f"Финансирование — {_e(f.quote(act['Финансирование']))}.")
             elif act["Приоритет"] == 2:
-                key_points.append(f"<b>Проверить исполнение.</b> {_e(f.quote(act['Действие']))} "
-                                  f"Основание: {_e(f.quote(act['Основание']))}.")
+                key_points.append(f"<b>{_e(f.quote(act['Действие']))}.</b> {_e(f.quote(act['Основание']))}. "
+                                  f"Финансирование — {_e(f.quote(act['Финансирование']))}.")
     t = a.targets.set_index("key")
     tg = t.loc["ytm_gross"]
     if pd.notna(tg["Цель"]):
         pf = a.proforma
-        txt = (f"<b>Доходность ниже цели.</b> YTM брутто {f.pct(m['ytm_gross'])} (после комиссии "
-               f"{f.pct(m['ytm_net'])}) против цели {f.pct(tg['Цель'])} ({f.bp_from(tg['Отклонение'])}); "
-               f"mod. duration {f.num(m['mod_duration'])} против {f.num(t.loc['mod_duration', 'Цель'])}.")
+        side = "ниже" if tg["Отклонение"] < 0 else "выше"
+        txt = (f"<b>YTM {side} цели на {f.bp(abs(tg['Отклонение']) * 10000)}:</b> {f.pct(m['ytm_gross'])} "
+               f"({f.pct(m['ytm_net'])} после комиссии) при цели {f.pct(tg['Цель'])}; дюрация "
+               f"{f.num(m['mod_duration'])} при цели {f.num(t.loc['mod_duration', 'Цель'])}.")
         if pf:
-            txt += (f" При целевой аллокации (pro forma): YTM {f.pct(pf['ytm_gross'])}, дюрация "
+            txt += (f" При целевой аллокации — YTM {f.pct(pf['ytm_gross'])}, дюрация "
                     f"{f.num(pf['mod_duration'])}, G-spread {f.bp(pf['gspread'])}.")
-        if tg["Отклонение"] >= 0:
-            txt = txt.replace("Доходность ниже цели.", "Доходность на уровне цели или выше.")
         key_points.append(txt)
     dq = res.quality
-    dur_txt = dq[(dq["Категория"] == "Дашборд") & dq["Комментарий"].str.contains("Целевая mod. duration")]
+    dur_txt = dq[(dq["Категория"] == "Дашборд") & dq["Комментарий"].str.contains("Целевая дюрация")]
     if not dur_txt.empty:
-        key_points.append(f"<b>Цель по дюрации требует уточнения:</b> {_e(f.quote(dur_txt.iloc[0]['Комментарий']))}")
+        key_points.append(f"<b>Цель по дюрации — уточнить.</b> {_e(f.quote(dur_txt.iloc[0]['Комментарий']))}")
     if gs is not None and gs.systematic["flag"]:
-        txt = (f"<b>G-spread в файле систематически отличается от пересчёта</b> по кривой Treasury на "
-               f"{D(gs.curve.date)}: медиана {f.bp(gs.systematic['median'], sign=True)} по бумагам; средний "
-               f"G-spread портфеля {f.bp(gs.portfolio['file'])} в файле против {f.bp(gs.portfolio['recomputed'])}.")
+        wide_narrow = "шире" if gs.systematic["median"] < 0 else "уже"
+        txt = (f"<b>Спреды в файле в среднем на {f.bp(abs(gs.systematic['median']))} {wide_narrow} пересчёта</b> "
+               f"по кривой Treasury на {D(gs.curve.date)}: G-spread портфеля {f.bp(gs.portfolio['file'])} "
+               f"в файле, {f.bp(gs.portfolio['recomputed'])} по пересчёту.")
         imp = {k: v for k, v in gs.implied.items() if k in METHOD_LABEL}
         if imp:
             best_m = min(imp, key=lambda k: imp[k]["mae"])
             b = imp[best_m]
-            txt += (f" Гипотеза: спреды в файле рассчитаны по кривой на {D(b['date'])} ({METHOD_LABEL[best_m]}; "
-                    f"средний модуль расхождения {f.num(b['mae'], 1)} бп) — уточнить у команды.")
+            txt += (f" Похоже, спреды посчитаны по кривой на {D(b['date'])} ({METHOD_LABEL[best_m]}, "
+                    f"в среднем ±{f.num(b['mae'], 1)} бп) — уточнить у команды.")
         key_points.append(txt)
     wide = rv[rv["Сигнал"] == "шире группы"] if rv is not None else pd.DataFrame()
     if not wide.empty:
-        key_points.append("<b>Рынок закладывает риск сверх рейтинга:</b> " + "; ".join(
-            f"{_e(r['Позиция'])} ({_e(r['Рейтинг'])}) {f.bp(r['Премия, бп'], sign=True)} к пирам"
+        key_points.append("<b>Шире пиров того же рейтинга:</b> " + "; ".join(
+            f"{_e(r['Позиция'])} ({_e(r['Рейтинг'])}) {f.bp(r['Премия, бп'], sign=True)}"
             for _, r in wide.iterrows()) + ".")
     conc = a.concentration[a.concentration["Статус"] != "в пределах"]
     if not conc.empty:
         key_points.append("<b>Концентрации:</b> " + "; ".join(
-            f"{_e(r['Тип']).lower()} {_e(r['Объект'])} — {f.pct(r['Доля'], 1)} при лимите {f.pct(r['Лимит'], 1)} "
+            f"{_e(r['Тип']).lower()} {_e(r['Объект'])} {f.pct(r['Доля'], 1)} при лимите {f.pct(r['Лимит'], 1)} "
             f"({_e(r['Статус'])})" for _, r in conc.iterrows()) + ".")
     errs = dq[dq["Уровень"] == "Ошибка"]
     if not errs.empty:
-        key_points.append(f"<b>Качество данных:</b> ошибок {f.int(len(errs))}, предупреждений "
+        key_points.append(f"<b>Данные:</b> ошибок {f.int(len(errs))}, предупреждений "
                           f"{f.int((dq['Уровень'] == 'Предупреждение').sum())} — " + "; ".join(
                               f"{_e(r['Позиция'])}: {_e(r['Категория']).lower()}" for _, r in errs.iterrows()) + ".")
     if cmp is not None:
@@ -145,10 +145,10 @@ def build(res: Results) -> Report:
         at = cmp.attribution["YTM, бп"]
         comp = at[at["Компонент"] != "Итого изменение портфеля"]
         main = comp.loc[comp["Вклад"].abs().idxmax()]
-        key_points.insert(0, f"<b>С {D(cmp.prev_date)}:</b> YTM портфеля {f.bp_from(mt.loc['ytm_gross', 'Изменение'])}, "
+        key_points.insert(0, f"<b>С {D(cmp.prev_date)}:</b> YTM {f.bp_from(mt.loc['ytm_gross', 'Изменение'])}, "
                              f"G-spread {f.bp(mt.loc['gspread', 'Изменение'], sign=True, d=1)}, дюрация "
-                             f"{f.num(mt.loc['mod_duration', 'Изменение'], sign=True)}; наибольший вклад в изменение "
-                             f"доходности — «{_e(main['Компонент'])}» ({f.bp(main['Вклад'], sign=True, d=1)}).")
+                             f"{f.num(mt.loc['mod_duration', 'Изменение'], sign=True)}. Основной вклад в YTM — "
+                             f"«{_e(main['Компонент'])}» ({f.bp(main['Вклад'], sign=True, d=1)}).")
 
     # ---------- Портфель и цели ----------
     rows = []
@@ -165,7 +165,7 @@ def build(res: Results) -> Report:
     extra = (f"<p class='small'>Средний рейтинг {_e(m['avg_rating'])}; IG {f.pct(m['ig_share'], 1)}, HY "
              f"{f.pct(m['hy_share'], 1)}, кэш {f.pct(m['cash_share'], 1)}, EM {f.pct(m['em_share'], 1)}; позиций "
              f"{f.int(m['n_positions'])}, эмитентов {f.int(m['n_issuers'])}. *Pro forma — при целевых долях sleeve "
-             f"и неизменном составе бумаг внутри sleeve.</p>")
+             f"и прежнем составе бумаг.</p>")
     if a.allocation is not None:
         al_rows = [[_e(r["Sleeve"]), f.pct(r["Текущее"], 1), f.pct(r["Цель"], 1), f.pp(r["Отклонение"]), _e(r["Статус"])]
                    for _, r in a.allocation.iterrows()]
@@ -234,22 +234,22 @@ def build(res: Results) -> Report:
     body = ""
     if est is not None:
         pe = est.portfolio
-        body += (f"<p>Оценка по индексам ICE BofA (FRED) и кривой Treasury с {D(est.as_of)} по {D(est.est_date)} "
-                 f"({f.int(pe['days'])} дн.): YTM портфеля ≈ {f.pct(pe['ytm_est'])} ({f.bp_from(pe['ytm_est'] - pe['ytm_file'])}), "
-                 f"G-spread ≈ {f.bp(pe['gs_est'])} ({f.bp(pe['gs_est'] - pe['gs_file'], sign=True)}); ценовой эффект "
-                 f"≈ {f.pct(pe['price'], sign=True)}, купонный доход ≈ {f.pct(pe['carry'], sign=True)}, итого ≈ "
-                 f"{f.pct(pe['total'], sign=True)} NAV. <i>Это оценка, а не данные по бумагам.</i></p>")
+        body += (f"<p>По индексам ICE BofA (FRED) и кривой Treasury, {D(est.as_of)} → {D(est.est_date)} "
+                 f"({f.int(pe['days'])} дн.): YTM ≈ {f.pct(pe['ytm_est'])} ({f.bp_from(pe['ytm_est'] - pe['ytm_file'])}), "
+                 f"G-spread ≈ {f.bp(pe['gs_est'])} ({f.bp(pe['gs_est'] - pe['gs_file'], sign=True)}); цена "
+                 f"≈ {f.pct(pe['price'], sign=True)}, купон ≈ {f.pct(pe['carry'], sign=True)}, итого ≈ "
+                 f"{f.pct(pe['total'], sign=True)} NAV. <i>Оценка, не котировки.</i></p>")
         worst = est.positions.nsmallest(3, "Итого доходность")
-        body += "<p class='small'>Сильнее всего (оценка): " + "; ".join(
+        body += "<p class='small'>Наибольшие потери (оценка): " + "; ".join(
             f"{_e(f.quote(r['Позиция']))} {f.pct(r['Итого доходность'], 1, sign=True)} (OAS индекса "
             f"{f.bp(r['Δ OAS индекса, бп'], sign=True)})" for _, r in worst.iterrows()) + ".</p>"
-        key_points.append(f"<b>Оценка на {D(est.est_date)} (по индексам FRED):</b> YTM портфеля ≈ {f.pct(pe['ytm_est'])}, "
-                          f"G-spread ≈ {f.bp(pe['gs_est'])}; доходность с даты снимка ≈ {f.pct(pe['total'], sign=True)} NAV "
+        key_points.append(f"<b>Оценка на {D(est.est_date)} по индексам:</b> YTM ≈ {f.pct(pe['ytm_est'])}, "
+                          f"G-spread ≈ {f.bp(pe['gs_est'])}; результат с даты снимка ≈ {f.pct(pe['total'], sign=True)} NAV "
                           f"(цена {f.pct(pe['price'], sign=True)}, купон {f.pct(pe['carry'], sign=True)}).")
     if stp is not None:
         srows = [[_e(f.quote(r["Сценарий"])), f.pct(r["P&L портфеля, % NAV"], sign=True), _e(f.quote(r["Худшая позиция"])),
                   f.pct(r["P&L худшей позиции, % NAV"], sign=True)] for _, r in stp["summary"].iterrows()]
-        body += _table(["Стресс-сценарий (мгновенный шок)", "P&L, % NAV", "Наибольший вклад", "его P&L, % NAV"], srows)
+        body += _table(["Стресс-сценарий (мгновенный шок)", "P&L, % NAV", "Худшая позиция", "P&L позиции, % NAV"], srows)
         body += "<p class='small'>P&L ≈ −mod. duration × (ΔUST + Δспреда); EM и HY — без двойного счёта; кэш — только UST.</p>"
     if body:
         title_e = f"Оценка на {D(est.est_date)} и стресс-тест" if est is not None else "Стресс-тест"
@@ -259,12 +259,12 @@ def build(res: Results) -> Report:
     items = []
     for _, r in conc.iterrows():
         items.append(f"{_e(r['Тип'])}: {_e(r['Объект'])} — {f.pct(r['Доля'], 1)} при лимите {f.pct(r['Лимит'], 1)} "
-                     f"({_e(r['Статус'])}; основание: {_e(f.quote(r['Основание лимита']))})")
-    items.append(f"Кредитный риск (DTS): {f.num(m['dts'], 0)}; доля HY {f.pct(m['hy_share'], 1)}, доля EM {f.pct(m['em_share'], 1)}.")
+                     f"({_e(r['Статус'])}; лимит: {_e(f.quote(r['Основание лимита']))})")
+    items.append(f"Кредитный риск (DTS) {f.num(m['dts'], 0)}; HY {f.pct(m['hy_share'], 1)}, EM {f.pct(m['em_share'], 1)}.")
     for _, r in wide.iterrows():
         rel = "" if r["Надёжность"] == "достаточно пиров" else f" ({_e(r['Надёжность'])})"
-        items.append(f"{_e(r['Позиция'])} ({_e(r['Рейтинг'])}, {_e(r['Регион'])}): G-spread {f.bp(r['G-spread'])} против "
-                     f"медианы пиров {f.bp(r['Медиана пиров'])}{rel}")
+        items.append(f"{_e(r['Позиция'])} ({_e(r['Рейтинг'])}, {_e(r['Регион'])}): G-spread {f.bp(r['G-spread'])} при "
+                     f"медиане пиров {f.bp(r['Медиана пиров'])}{rel}")
     for _, r in errs.iterrows():
         items.append(f"Данные — {_e(r['Позиция'])}: {_e(f.quote(r['Комментарий']))}")
     sections.append(("Риски и сигналы", "<ul>" + "".join(f"<li>{x}</li>" for x in items) + "</ul>"))
@@ -273,23 +273,23 @@ def build(res: Results) -> Report:
     items = []
     if ru:
         for act in ru["actions"]:
-            items.append(f"<b>{_e(f.quote(act['Действие']))}</b> — {_e(f.quote(act['Основание']))}. "
-                         f"Финансирование: {_e(f.quote(act['Финансирование']))}.")
+            items.append(f"<b>{_e(f.quote(act['Действие']))}.</b> {_e(f.quote(act['Основание']))}. "
+                         f"Финансирование — {_e(f.quote(act['Финансирование']))}.")
     if a.allocation is not None:
         off = a.allocation[a.allocation["Статус"] != "в пределах"]
         if not off.empty:
-            items.append("Отклонения от целевой аллокации (путь к цели задают правила выше): " + "; ".join(
+            items.append("Отклонения от целевой аллокации (путь к цели — по правилам выше): " + "; ".join(
                 f"{_e(r['Sleeve'])} {f.pp(r['Отклонение'])}" for _, r in off.iterrows()))
     if not wide.empty:
-        items.append("Проверить бумаги со спредом шире пиров (новости эмитента, ликвидность, структура выпуска) "
-                     "перед доборами в их сегменты: " + ", ".join(_e(x) for x in wide["Позиция"]) + ".")
+        items.append("Перед доборами проверить бумаги шире пиров (новости эмитента, ликвидность, структура выпуска): "
+                     + ", ".join(_e(x) for x in wide["Позиция"]) + ".")
     sec_breach = conc[(conc["Статус"] == "превышен")]
     for _, r in sec_breach.iterrows():
-        items.append(f"Рассмотреть снижение концентрации: {_e(r['Тип']).lower()} {_e(r['Объект'])} "
+        items.append(f"Сократить долю: {_e(r['Тип']).lower()} {_e(r['Объект'])} "
                      f"{f.pct(r['Доля'], 1)} при лимите {f.pct(r['Лимит'], 1)}.")
     sections.append(("Предложения по ребалансировке", "<ol>" + "".join(f"<li>{x}</li>" for x in items) + "</ol>"
-                     "<p class='small'>Предложения сформированы программой по правилам стратегии компании, отклонениям "
-                     "от целевой аллокации и сигналам; это не рекомендация к сделке.</p>"))
+                     "<p class='small'>Предложения следуют из правил стратегии, отклонений от целевой аллокации "
+                     "и сигналов.</p>"))
 
     # ---------- Поправки аналитика ----------
     cl = res.corrections
@@ -299,32 +299,32 @@ def build(res: Results) -> Report:
                  _e(f.quote(r["Основание"])), _e(f.quote(r["Статус"]))] for _, r in cl.iterrows()]
         sections.append(("Поправки аналитика", _table(
             ["Позиция", "Поле", "Было", "Стало", "Основание", "Статус"], rows, cls="corr")
-            + "<p class='small'>Исходный файл компании не изменён; расчёты отчёта выполнены по исправленным данным. "
+            + "<p class='small'>Исходный файл не изменён, отчёт посчитан по исправленным данным. "
               "Поправка применяется, только если значение в файле равно «было».</p>"))
         if not ok.empty:
-            key_points.insert(0, f"<b>Применены поправки аналитика ({f.int(len(ok))}):</b> " + "; ".join(
+            key_points.insert(0, f"<b>Поправки аналитика ({f.int(len(ok))}):</b> " + "; ".join(
                 f"{_e(f.quote(r['Позиция']))} — {_e(r['Поле']).lower()} {_e(f.quote(r['Было']))} → "
                 f"{_e(f.quote(r['Стало']))}" for _, r in ok.iterrows()) + ". Исходный файл не изменён.")
 
     # ---------- Оговорки ----------
-    src = [f"Данные по бумагам — файл компании «{_e(f.quote(s.source_name))}» (снимок {D(s.as_of)})."]
+    src = [f"Данные по бумагам — файл «{_e(f.quote(s.source_name))}» на {D(s.as_of)}."]
     if res.prev is not None:
-        src.append(f"Предыдущий снимок — «{_e(f.quote(res.prev.source_name))}» ({D(res.prev.as_of)}).")
+        src.append(f"Прошлый снимок — «{_e(f.quote(res.prev.source_name))}» на {D(res.prev.as_of)}.")
     src.append(f"Кривая UST — {_e(SOURCE_UST)}; HY OAS — {_e(SOURCE_HY)}.")
-    src.append("Бесплатных официальных источников цен по отдельным еврооблигациям нет: доходности и спреды бумаг "
-               "взяты из файла компании; производные метрики — расчётом (формулы — в разделе «Методология»).")
-    src.append("Пороги концентрации и сигналов — допущения аналитика (config.yaml), значения указаны в методологии.")
+    src.append("Бесплатных официальных котировок по отдельным еврооблигациям нет: доходности и спреды бумаг — "
+               "из файла компании, производные метрики — расчётом (формулы — в методологии).")
+    src.append("Пороги концентрации и сигналов — допущения; значения и обоснование — в методологии.")
     sections.append(("Источники и оговорки", "<ul class='small'>" + "".join(f"<li>{x}</li>" for x in src) + "</ul>"))
 
     title = f"Портфель еврооблигаций — аналитическая записка на {D(s.as_of)}"
     sub = (f"Сравнение с {D(res.prev.as_of)} · " if res.prev is not None else "") + \
           f"Рыночные данные на {D(mk.curve_latest.date) if mk and mk.curve_latest else '—'} · " \
-          f"Сформировано {D(res.today)} · Версия текста: {TEXT_VERSION}"
+          f"Подготовлено {D(res.today)} · Версия текста: {TEXT_VERSION}"
     body = (f"<h1>{_e(title)}</h1><p class='sub'>{_e(sub)}</p>"
             "<h2>Главное</h2><ul class='key'>" + "".join(f"<li>{x}</li>" for x in key_points) + "</ul>"
             + "".join(f"<h2>{_e(h)}</h2>{b}" for h, b in sections)
-            + "<p class='disclaimer'>Решение остаётся за аналитиком. Отчёт сформирован автоматически по данным файла "
-              "компании и официальных источников; он не является инвестиционной рекомендацией.</p>")
+            + "<p class='disclaimer'>Решение остаётся за аналитиком. Записка подготовлена автоматически по файлу "
+              "компании и данным Treasury и FRED и не является инвестиционной рекомендацией.</p>")
     doc = HTML_TEMPLATE.replace("{{title}}", _e(title)).replace("{{body}}", body)
     text = re.sub(r"<[^>]+>", " ", body)
     text = html.unescape(re.sub(r"\s+", " ", text))

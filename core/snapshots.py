@@ -38,10 +38,10 @@ class Comparison:
 def order_snapshots(a: Snapshot, b: Snapshot):
     """(текущий, предыдущий, примечание): если даты перепутаны — меняет местами."""
     if a.as_of and b.as_of and b.as_of > a.as_of:
-        return b, a, (f"Файлы загружены в обратном порядке: «{a.source_name}» ({a.as_of:%d.%m.%Y}) старше, чем "
-                      f"«{b.source_name}» ({b.as_of:%d.%m.%Y}). Текущим считается более поздний.")
+        return b, a, (f"Файлы перепутаны: «{a.source_name}» ({a.as_of:%d.%m.%Y}) старше "
+                      f"«{b.source_name}» ({b.as_of:%d.%m.%Y}). Текущим взят более поздний.")
     if a.as_of and b.as_of and a.as_of == b.as_of:
-        return a, b, f"У обоих снимков одна дата ({a.as_of:%d.%m.%Y}) — проверьте, что загружены разные файлы."
+        return a, b, f"У снимков одна дата ({a.as_of:%d.%m.%Y}) — проверить, что загружены разные файлы."
     return a, b, None
 
 
@@ -66,7 +66,7 @@ def inherit_targets(cur: Snapshot, prev: Snapshot) -> tuple[Snapshot, list]:
     if not cur.dashboard_texts and not any(cur.sheet_texts.values()) and (prev.dashboard_texts or prev.sheet_texts):
         out.dashboard_texts = list(prev.dashboard_texts)
         out.sheet_texts = dict(prev.sheet_texts)
-        notes.append(f"Текст стратегии (правила добора) взят из снимка {when}.")
+        notes.append(f"Правила добора взяты из снимка {when}.")
     return out, notes
 
 
@@ -151,7 +151,7 @@ def compare(cur: Snapshot, prev: Snapshot, cfg: dict, curve_cur=None, curve_prev
         total = d["Вклад"].sum()
         d.loc[len(d)] = ["Итого изменение портфеля", total]
     if not have_curves:
-        notes.append("Нет кривой UST на одну из дат — изменение YTM не разделено на рынок и спред.")
+        notes.append("Нет кривой UST на одну из дат — изменение YTM не разложено на рынок и спред.")
 
     pos = pd.DataFrame({
         "Позиция": [l if isinstance(l, str) else lp for l, lp in zip(m.get("label"), m.get("label_prev"))],

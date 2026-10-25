@@ -18,7 +18,7 @@ def test_every_column_documented():
     md = markdown(load_config())
     for k in PORTFOLIO_COLUMNS:
         assert f"**{COLUMN_LABELS[k]}**" in md
-    assert "Быстрый старт" in md and "Требования к файлу: все колонки и листы" in md
+    assert "Порядок работы" in md and "Колонки и листы файла" in md
 
 
 def test_user_guide_has_no_developer_details():

@@ -18,11 +18,11 @@ def _d(d):
 def render_estimate(e: Estimate | None, errors: list):
     st.subheader("Оценка портфеля на последнюю рыночную дату")
     if e is None:
-        st.warning("Оценка недоступна: нет кривой UST или индексов FRED. " + " ".join(errors))
+        st.warning("Оценки нет: нет кривой UST или индексов FRED. " + " ".join(errors))
         return
     p = e.portfolio
     st.caption(f"С даты снимка {_d(e.as_of)} по {_d(e.est_date)} ({p['days']} дн.). ΔYTM бумаги ≈ ΔUST на её срок "
-               "(Treasury) + ΔOAS её индекса ICE BofA (FRED). **Это оценка, а не данные по бумагам.**")
+               "(Treasury) + ΔOAS её индекса ICE BofA (FRED). **Оценка по индексам, не котировки бумаг.**")
     k = st.columns(4)
     k[0].metric("YTM (оценка)", f"{p['ytm_est'] * 100:.2f}%", f"{(p['ytm_est'] - p['ytm_file']) * 1e4:+.0f} бп к файлу",
                 delta_color="off")
@@ -31,7 +31,7 @@ def render_estimate(e: Estimate | None, errors: list):
     k[2].metric("Ценовой эффект + купон", f"{p['total'] * 100:+.2f}%",
                 f"цена {p['price'] * 100:+.2f}%, купон {p['carry'] * 100:+.2f}%", delta_color="off")
     k[3].metric("Вклад: UST / спреды", f"{round(p['d_ust_bp']) + 0:+d} / {round(p['d_oas_bp']) + 0:+d} бп",
-                help="Средневзвешенные изменения ставки UST на сроки бумаг и OAS их индексов.")
+                help="Средневзвешенное изменение UST на сроки бумаг и OAS их индексов.")
     st.markdown("**Индексы и изменения спредов**")
     idx = e.indices.copy()
     st.dataframe(idx, hide_index=True, width="stretch", column_config={
@@ -57,10 +57,10 @@ def render_estimate(e: Estimate | None, errors: list):
 
 def render_stress(snap, stress: dict):
     st.subheader("Стресс-тест: мгновенный шок ставок и спредов")
-    st.caption("P&L позиции ≈ −mod. duration × (ΔUST + Δспреда). Шок EM — позиции с Region = EM, HY — рейтинг ниже "
-               "BBB−; если бумага и EM, и HY — берётся больший шок. Кэш/T-bills — только ΔUST. Выпуклость не учитывается.")
-    nav = st.number_input("NAV портфеля, $ млн (необязательно — для пересчёта в доллары)", 0.0, 100000.0, 0.0, 0.1,
-                          help="В файле компании NAV не задан явно; укажите, чтобы увидеть P&L в долларах.")
+    st.caption("P&L позиции ≈ −mod. duration × (ΔUST + Δспреда). Шок EM — Region = EM, HY — рейтинг ниже BBB−; "
+               "для бумаги EM и HY — больший из шоков. Кэш и T-bills — только ΔUST. Без выпуклости.")
+    nav = st.number_input("NAV портфеля, $ млн (для P&L в долларах)", 0.0, 100000.0, 0.0, 0.1,
+                          help="В файле компании NAV нет. При 0 P&L показывается только в процентах.")
     s = stress["summary"].copy()
     fig = go.Figure()
     fig.add_bar(y=s["Сценарий"], x=s["P&L портфеля, % NAV"] * 100, orientation="h",
