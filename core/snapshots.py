@@ -1,4 +1,4 @@
-"""Сравнение двух снимков портфеля.
+"""Сравнение двух портфелей.
 
 - метрики портфеля и аллокация: было → стало;
 - позиции: сопоставление по ISIN / названию / эмитенту и погашению; новые, выбывшие, оставшиеся;
@@ -41,19 +41,19 @@ def order_snapshots(a: Snapshot, b: Snapshot):
         return b, a, (f"Файлы перепутаны: «{a.source_name}» ({a.as_of:%d.%m.%Y}) старше "
                       f"«{b.source_name}» ({b.as_of:%d.%m.%Y}). Текущим взят более поздний.")
     if a.as_of and b.as_of and a.as_of == b.as_of:
-        return a, b, f"У снимков одна дата ({a.as_of:%d.%m.%Y}) — проверить, что загружены разные файлы."
+        return a, b, f"У портфелей одна дата ({a.as_of:%d.%m.%Y}) — проверить, что загружены разные файлы."
     return a, b, None
 
 
 def inherit_targets(cur: Snapshot, prev: Snapshot) -> tuple[Snapshot, list]:
-    """Если в новом файле нет целей, аллокации или текста правил — берутся из предыдущего снимка (с пометкой)."""
+    """Если в новом файле нет целей, аллокации или текста правил — берутся из предыдущего портфеля (с пометкой)."""
     out, notes = copy.copy(cur), []
-    when = f"от {prev.as_of:%d.%m.%Y}" if prev.as_of else "предыдущего снимка"
+    when = f"от {prev.as_of:%d.%m.%Y}" if prev.as_of else "предыдущего портфеля"
     if not cur.dashboard_metrics and prev.dashboard_metrics:
         out.dashboard_metrics = copy.deepcopy(prev.dashboard_metrics)
         for m in out.dashboard_metrics.values():
             m["current"] = None                     # текущие значения старого дашборда не переносим
-        notes.append(f"Целевые метрики взяты из снимка {when}: в новом файле их нет.")
+        notes.append(f"Целевые метрики взяты из портфеля {when}: в новом файле их нет.")
     if (cur.allocation is None or cur.allocation.empty) and prev.allocation is not None and not prev.allocation.empty:
         from .loader import map_sleeves
         a = prev.allocation[["sleeve", "target"]].copy()
@@ -62,11 +62,11 @@ def inherit_targets(cur: Snapshot, prev: Snapshot) -> tuple[Snapshot, list]:
         a["portfolio_sleeve"] = a["sleeve"].map(lambda s: mp[s][0])
         a["match"] = a["sleeve"].map(lambda s: mp[s][1])
         out.allocation = a
-        notes.append(f"Целевая аллокация взята из снимка {when}: в новом файле её нет.")
+        notes.append(f"Целевая аллокация взята из портфеля {when}: в новом файле её нет.")
     if not cur.dashboard_texts and not any(cur.sheet_texts.values()) and (prev.dashboard_texts or prev.sheet_texts):
         out.dashboard_texts = list(prev.dashboard_texts)
         out.sheet_texts = dict(prev.sheet_texts)
-        notes.append(f"Правила добора взяты из снимка {when}.")
+        notes.append(f"Правила добора взяты из портфеля {when}.")
     return out, notes
 
 
@@ -88,7 +88,7 @@ def _decompose(m: pd.DataFrame, col: str, with_market: bool = False) -> pd.DataF
     ok = x0.notna() & x1.notna()
     value_change = float((w0[ok] * (x1[ok] - x0[ok])).sum())
     reweight = float(((w1 - w0)[ok] * x1[ok]).sum())
-    # Бумаги, у которых значение есть только в одном из снимков, — как вход/выход.
+    # Бумаги, у которых значение есть только в одном из портфелей, — как вход/выход.
     only_new = float((w1[~ok & x1.notna()] * x1[~ok & x1.notna()]).sum())
     only_old = float((w0[~ok & x0.notna()] * x0[~ok & x0.notna()]).sum())
     added = float((new["weight"].fillna(0) * new[col]).sum(skipna=True)) + only_new
@@ -192,7 +192,7 @@ def compare(cur: Snapshot, prev: Snapshot, cfg: dict, curve_cur=None, curve_prev
     rating_changes = pos[pos["Δ рейтинга, ступеней"].fillna(0) != 0][
         ["Позиция", "Рейтинг ранее", "Рейтинг сейчас", "Δ рейтинга, ступеней", "Изменения"]]
 
-    # Аллокация: цель — из текущего снимка (или унаследованная)
+    # Аллокация: цель — из текущего портфеля (или унаследованная)
     alloc = None
     if a1.allocation is not None:
         prev_by = prev.positions.groupby("sleeve")["weight"].sum()

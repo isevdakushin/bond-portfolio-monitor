@@ -21,7 +21,7 @@ def render_estimate(e: Estimate | None, errors: list):
         st.warning("Оценки нет: нет кривой UST или индексов FRED. " + " ".join(errors))
         return
     p = e.portfolio
-    st.caption(f"С даты снимка {_d(e.as_of)} по {_d(e.est_date)} ({p['days']} дн.). ΔYTM бумаги ≈ ΔUST на её срок "
+    st.caption(f"С даты портфеля {_d(e.as_of)} по {_d(e.est_date)} ({p['days']} дн.). ΔYTM бумаги ≈ ΔUST на её срок "
                "(Treasury) + ΔOAS её индекса ICE BofA (FRED). **Оценка по индексам, не котировки бумаг.**")
     k = st.columns(4)
     k[0].metric("YTM (оценка)", f"{p['ytm_est'] * 100:.2f}%", f"{(p['ytm_est'] - p['ytm_file']) * 1e4:+.0f} бп к файлу",
@@ -36,7 +36,7 @@ def render_estimate(e: Estimate | None, errors: list):
     idx = e.indices.copy()
     st.dataframe(idx, hide_index=True, width="stretch", column_config={
         "Ссылка": st.column_config.LinkColumn("Источник", display_text="FRED"),
-        "OAS на дату снимка, бп": st.column_config.NumberColumn(format="%.0f"),
+        "OAS на дату портфеля, бп": st.column_config.NumberColumn(format="%.0f"),
         "OAS на дату оценки, бп": st.column_config.NumberColumn(format="%.0f"),
         "Δ OAS, бп": st.column_config.NumberColumn(format="%+.0f")})
     pos = e.positions.sort_values("Итого доходность").copy()

@@ -40,7 +40,7 @@ def render(snap_raw, name: str, log: pd.DataFrame, source: bytes):
     st.subheader("Поправки аналитика")
     st.caption("Исправления поверх файла компании: файл не меняется, каждая поправка — с основанием и попадает в "
                "журнал отчёта. Поправка применяется, только если в файле всё ещё значение «было», поэтому файл "
-               "поправок можно подгружать и к следующему снимку.")
+               "поправок можно подгружать и к следующему файлу.")
     items = get(name)
     done = {(c["label"], c["field"]) for c in items}
 
@@ -99,7 +99,7 @@ def render(snap_raw, name: str, log: pd.DataFrame, source: bytes):
             st.rerun()
         c2.download_button("Файл поправок (JSON)", C.to_json(items).encode("utf-8"),
                            file_name=f"corrections_{Path(name).stem}.json", mime="application/json",
-                           help="Те же поправки для следующего снимка.")
+                           help="Те же поправки для следующего файла.")
         xlsx = C.corrected_excel(source, snap_raw, log) if Path(name).suffix.lower() in (".xlsx", ".xlsm") else None
         if xlsx:
             c3.download_button("Исправленный Excel", xlsx, file_name=f"{Path(name).stem}_исправлено.xlsx",

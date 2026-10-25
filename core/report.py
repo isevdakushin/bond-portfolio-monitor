@@ -172,7 +172,7 @@ def build(res: Results) -> Report:
         extra += _table(["Sleeve", "Текущая", "Цель", "Отклонение", "Статус"], al_rows)
     sections.append(("Портфель и цели", port + extra))
 
-    # ---------- Изменения с прошлого снимка ----------
+    # ---------- Изменения к прошлому портфелю ----------
     if cmp is not None:
         mt = cmp.metrics
         kinds = {"pct": lambda x: f.bp_from(x), "share": lambda x: f.pp(x), "num": lambda x: f.num(x, sign=True),
@@ -220,13 +220,13 @@ def build(res: Results) -> Report:
             mrows.append(["HY OAS", f"{f.bp(mk.hy_asof[1])} ({D(mk.hy_asof[0])})",
                           f"{f.bp(mk.hy_latest[1])} ({D(mk.hy_latest[0])})",
                           f.bp(mk.hy_latest[1] - mk.hy_asof[1], sign=True), "FRED (ICE BofA)"])
-        body = _table(["Показатель", "На дату снимка", "Последнее", "Изменение", "Источник"], mrows)
+        body = _table(["Показатель", "На дату портфеля", "Последнее", "Изменение", "Источник"], mrows)
         if mk.errors:
             body += "".join(f"<p class='small warn'>Нет данных: {_e(e)}</p>" for e in mk.errors)
         if ru:
-            rr = [[_e(f.quote(r["Правило"])), _e(f.quote(r["Сейчас"])), _e(f.quote(r["Касание с даты снимка"])),
+            rr = [[_e(f.quote(r["Правило"])), _e(f.quote(r["Сейчас"])), _e(f.quote(r["Касание с даты портфеля"])),
                    _e(r["Статус"])] for _, r in ru["table"].iterrows()]
-            body += _table(["Правило (из файла)", "Сейчас", "Касание с даты снимка", "Статус"], rr)
+            body += _table(["Правило (из файла)", "Сейчас", "Касание с даты портфеля", "Статус"], rr)
         sections.append(("Рыночный фон и правила добора", body))
 
     # ---------- Оценка на текущую дату и стресс-тест ----------
@@ -244,7 +244,7 @@ def build(res: Results) -> Report:
             f"{_e(f.quote(r['Позиция']))} {f.pct(r['Итого доходность'], 1, sign=True)} (OAS индекса "
             f"{f.bp(r['Δ OAS индекса, бп'], sign=True)})" for _, r in worst.iterrows()) + ".</p>"
         key_points.append(f"<b>Оценка на {D(est.est_date)} по индексам:</b> YTM ≈ {f.pct(pe['ytm_est'])}, "
-                          f"G-spread ≈ {f.bp(pe['gs_est'])}; результат с даты снимка ≈ {f.pct(pe['total'], sign=True)} NAV "
+                          f"G-spread ≈ {f.bp(pe['gs_est'])}; результат с даты портфеля ≈ {f.pct(pe['total'], sign=True)} NAV "
                           f"(цена {f.pct(pe['price'], sign=True)}, купон {f.pct(pe['carry'], sign=True)}).")
     if stp is not None:
         srows = [[_e(f.quote(r["Сценарий"])), f.pct(r["P&L портфеля, % NAV"], sign=True), _e(f.quote(r["Худшая позиция"])),
@@ -309,7 +309,7 @@ def build(res: Results) -> Report:
     # ---------- Оговорки ----------
     src = [f"Данные по бумагам — файл «{_e(f.quote(s.source_name))}» на {D(s.as_of)}."]
     if res.prev is not None:
-        src.append(f"Прошлый снимок — «{_e(f.quote(res.prev.source_name))}» на {D(res.prev.as_of)}.")
+        src.append(f"Прошлый портфель — «{_e(f.quote(res.prev.source_name))}» на {D(res.prev.as_of)}.")
     src.append(f"Кривая UST — {_e(SOURCE_UST)}; HY OAS — {_e(SOURCE_HY)}.")
     src.append("Бесплатных официальных котировок по отдельным еврооблигациям нет: доходности и спреды бумаг — "
                "из файла компании, производные метрики — расчётом (формулы — в методологии).")

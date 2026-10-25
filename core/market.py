@@ -240,7 +240,7 @@ def value_on(series: pd.Series, on: dt.date):
     return s.index[-1], float(s.iloc[-1])
 
 
-# ---------- сборка рыночного фона для снимка ----------
+# ---------- сборка рыночного фона для портфеля ----------
 
 @dataclass
 class Market:
@@ -271,7 +271,7 @@ def load_market(as_of: dt.date | None, fred_key: str | None, today: dt.date | No
     try:
         m.curve_asof = ust_curve(ref)
     except MarketDataError as e:
-        m.errors.append(f"Кривая UST на дату снимка: {e}")
+        m.errors.append(f"Кривая UST на дату портфеля: {e}")
     try:
         m.curve_latest = ust_curve(today)
     except MarketDataError as e:
@@ -292,7 +292,7 @@ def load_market(as_of: dt.date | None, fred_key: str | None, today: dt.date | No
 # ---------- сверка рыночных цифр, упомянутых в файле ----------
 
 def check_file_claims(texts: list[str], market: Market, tol_bp: float = 1.0) -> list[dict]:
-    """Ищет в текстах дашборда упоминания «10Y UST 4,94%» и сверяет с Treasury на дату снимка."""
+    """Ищет в текстах дашборда упоминания «10Y UST 4,94%» и сверяет с Treasury на дату портфеля."""
     out = []
     if market.curve_asof is None:
         return out

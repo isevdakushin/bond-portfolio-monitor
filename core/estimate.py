@@ -1,4 +1,4 @@
-"""Оценка портфеля на последнюю рыночную дату по официальным индексам (между снимками компании).
+"""Оценка портфеля на последнюю рыночную дату по официальным индексам (между файлами компании).
 
 Для каждой позиции: ΔYTM ≈ ΔUST(T) + ΔOAS индекса; оценка YTM = YTM из файла + ΔYTM;
 оценка G-spread = G-spread из файла + ΔOAS; ценовой эффект ≈ −MD × ΔYTM; купонный доход (carry) ≈
@@ -85,7 +85,7 @@ def estimate(snap: Snapshot, cfg: dict, fred_key: str | None, curve_asof: Curve 
         d0, v0 = value_on(s, snap.as_of)
         d1, v1 = value_on(s, est_date)
         idx_rows.append({"Группа": b, "Индекс": INDEX_NAMES.get(b, b), "Серия FRED": sid, "Ссылка": FRED_PAGE.format(series=sid),
-                         "Дата снимка": d0, "OAS на дату снимка, бп": v0, "Дата оценки": d1, "OAS на дату оценки, бп": v1,
+                         "Дата портфеля": d0, "OAS на дату портфеля, бп": v0, "Дата оценки": d1, "OAS на дату оценки, бп": v1,
                          "Δ OAS, бп": (v1 - v0) if v0 is not None and v1 is not None else np.nan,
                          "Позиций": int((p["bucket"] == b).sum())})
     indices = pd.DataFrame(idx_rows)

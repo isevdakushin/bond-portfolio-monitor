@@ -36,7 +36,7 @@ def main(argv=None):
         sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description="Анализ портфеля еврооблигаций")
     ap.add_argument("file", help="Excel-файл портфеля (.xlsx)")
-    ap.add_argument("--previous", help="предыдущий снимок для сравнения")
+    ap.add_argument("--previous", help="предыдущий портфель для сравнения")
     ap.add_argument("--config", help="путь к config.yaml")
     ap.add_argument("--out", default="output", help="папка для результатов")
     ap.add_argument("--no-market", action="store_true", help="не загружать рыночные данные")
@@ -51,7 +51,7 @@ def main(argv=None):
         return 2
 
     print(f"Файл: {snap.source_name}")
-    print(f"Дата снимка: {snap.as_of:%d.%m.%Y}" if snap.as_of else "Дата снимка: не определена")
+    print(f"Дата портфеля: {snap.as_of:%d.%m.%Y}" if snap.as_of else "Дата портфеля: не определена")
     print(f"Позиций: {len(snap.positions)}; листы: {snap.sheet_names}")
 
     corr_log = None
@@ -99,7 +99,7 @@ def main(argv=None):
         try:
             prev = load_snapshot(args.previous)
         except LoadError as e:
-            print(f"\nПредыдущий снимок не загружен: {e}")
+            print(f"\nПредыдущий портфель не загружен: {e}")
     if prev is not None:
         snap, prev, note = order_snapshots(snap, prev)
         snap, inh = inherit_targets(snap, prev)
@@ -124,10 +124,10 @@ def main(argv=None):
         print("\nРыночные данные")
         for e in mk.errors:
             print(f"  НЕТ ДАННЫХ: {e}")
-        for label, c in (("на дату снимка", mk.curve_asof), ("последняя", mk.curve_latest)):
+        for label, c in (("на дату портфеля", mk.curve_asof), ("последняя", mk.curve_latest)):
             if c:
                 print(f"  10Y UST {label}: {c.at(10) * 100:.2f}% (наблюдение {c.date:%d.%m.%Y}; {c.how}; {c.url})")
-        for label, v in (("на дату снимка", mk.hy_asof), ("последний", mk.hy_latest)):
+        for label, v in (("на дату портфеля", mk.hy_asof), ("последний", mk.hy_latest)):
             if v and v[0]:
                 print(f"  HY OAS {label}: {v[1]:.0f} бп (наблюдение {v[0]:%d.%m.%Y}; {mk.hy_meta.get('channel')}; "
                       f"{mk.hy_meta.get('url')})")
@@ -138,8 +138,8 @@ def main(argv=None):
         ev = evaluate_rules(snap, mk, cfg)
         print("\nПравила добора (из файла; уровни — Treasury/FRED). Решение остаётся за аналитиком.")
         for _, r in ev["table"].iterrows():
-            print(f"  {r['Правило']}: {r['Статус']} | на дату снимка {r['На дату снимка']} | сейчас {r['Сейчас']} | "
-                  f"касание: {r['Касание с даты снимка']}")
+            print(f"  {r['Правило']}: {r['Статус']} | на дату портфеля {r['На дату портфеля']} | сейчас {r['Сейчас']} | "
+                  f"касание: {r['Касание с даты портфеля']}")
         for a in ev["actions"]:
             print(f"  ДЕЙСТВИЕ [{a['Приоритет']}]: {a['Действие']}. Основание: {a['Основание']}. "
                   f"Финансирование: {a['Финансирование']}")
@@ -170,7 +170,7 @@ def main(argv=None):
         if not args.no_market:
             c_cur, c_prev = load_market(snap.as_of, key).curve_asof, load_market(prev.as_of, key).curve_asof
         cmp = compare_snapshots(snap, prev, cfg, c_cur, c_prev)
-        print(f"\nСравнение снимков: {snap.as_of:%d.%m.%Y} против {prev.as_of:%d.%m.%Y}")
+        print(f"\nСравнение портфелей: {snap.as_of:%d.%m.%Y} против {prev.as_of:%d.%m.%Y}")
         for _, r in cmp.metrics.iterrows():
             if r["Изменение"] is None or pd.isna(r["Изменение"]):
                 continue

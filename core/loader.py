@@ -1,4 +1,4 @@
-"""Загрузка файла портфеля в «снимок» (Snapshot).
+"""Загрузка файла портфеля в объект Snapshot.
 
 Устойчивость к другому формату файла:
 - форматы: .xlsx, .xlsm, .xls (старый Excel), .csv;
@@ -9,7 +9,7 @@
 - единицы определяются по данным: проценты/доли, бп/проценты для спреда, рыночная стоимость вместо весов;
 - рейтинги S&P, Fitch и Moody's, несколько колонок рейтинга -> составной рейтинг;
 - строки-разделы («ST Corp Bonds IG» над группой бумаг) задают sleeve, строки «Итого» исключаются;
-- всё, что не распознано автоматически, можно указать вручную (overrides): лист, колонки, дату снимка.
+- всё, что не распознано автоматически, можно указать вручную (overrides): лист, колонки, дату портфеля.
 """
 from __future__ import annotations
 
@@ -831,7 +831,7 @@ def load_snapshot(source, name: str | None = None, overrides: dict | None = None
         allocation["portfolio_sleeve"] = allocation["sleeve"].map(lambda s: mapping[s][0])
         allocation["match"] = allocation["sleeve"].map(lambda s: mapping[s][1])
 
-    # Дата снимка: ручной ввод -> заголовки листов -> имя файла.
+    # Дата портфеля: ручной ввод -> заголовки листов -> имя файла.
     candidates = []
     if overrides.get("as_of"):
         candidates.append(("указана вручную", overrides["as_of"]))

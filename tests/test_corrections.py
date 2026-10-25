@@ -1,4 +1,4 @@
-"""Поправки аналитика: подсказки, применение, журнал, перенос на новый снимок, выгрузка Excel."""
+"""Поправки аналитика: подсказки, применение, журнал, перенос на новый файл, выгрузка Excel."""
 import copy
 import datetime as dt
 import io
@@ -113,7 +113,7 @@ def test_report_contains_corrections_and_registry_holds(snap):
 def test_pipeline_applies_corrections_and_keeps_raw(snap):
     from core.pipeline import run
     res = run(snap, load_config(), use_market=False, corrections=_fix_all(snap))
-    assert res.snap_raw is snap                                           # исходный снимок — для подсказок
+    assert res.snap_raw is snap                                           # исходный портфель — для подсказок
     assert res.snap.positions.set_index("label").loc["#5 Targa Resources Corp", "maturity"] == dt.date(2031, 4, 15)
     assert (res.corrections["Статус"] == "применена").all()
     assert (res.quality["Уровень"] == "Ошибка").sum() == 0                 # проверки — по исправленным данным

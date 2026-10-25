@@ -77,4 +77,4 @@ def render(ev: dict, market, as_of):
                           annotation_text=f"триггер {rules.hy_trigger_bp:.0f} бп", annotation_position="top left",
                           annotation_font_size=11)
             st.plotly_chart(fig, width="stretch", theme="streamlit")
-    st.caption("Пунктир по вертикали — дата снимка. Период — 60 дней до снимка и до последней даты данных.")
+    st.caption("Пунктир по вертикали — дата портфеля. Период — 60 дней до даты портфеля и до последней даты данных.")

@@ -1,4 +1,4 @@
-"""Проверки качества данных снимка портфеля.
+"""Проверки качества данных портфеля.
 
 Каждая проверка возвращает записи вида:
 уровень (Ошибка / Предупреждение / Инфо), категория, позиция, поле,
@@ -78,16 +78,16 @@ def run_checks(snap: Snapshot, cfg: dict) -> pd.DataFrame:
 
 def _check_date(snap, iss):
     if not snap.as_of:
-        iss.add("Ошибка", "Дата снимка", "Дата снимка не найдена ни в заголовках листов, ни в имени файла. "
+        iss.add("Ошибка", "Дата портфеля", "Дата портфеля не найдена ни в заголовках листов, ни в имени файла. "
                 "Указать её в блоке «Распознавание файла»: от даты зависят сроки до погашения и кривая UST.")
         return
     dates = {d for _, d in snap.as_of_candidates}
     srcs = "; ".join(f"{s}: {dfmt(d)}" for s, d in snap.as_of_candidates)
     if len(dates) > 1:
-        iss.add("Предупреждение", "Дата снимка", f"Даты в файле расходятся ({srcs}). "
+        iss.add("Предупреждение", "Дата портфеля", f"Даты в файле расходятся ({srcs}). "
                 f"Взята {dfmt(snap.as_of)}.", field="Дата", file_value=srcs)
     else:
-        iss.add("Инфо", "Дата снимка", f"Дата снимка {dfmt(snap.as_of)} ({srcs}).")
+        iss.add("Инфо", "Дата портфеля", f"Дата портфеля {dfmt(snap.as_of)} ({srcs}).")
 
 
 def _check_weights(p, q, iss):
@@ -209,7 +209,7 @@ def _check_ranges(p, snap, q, iss):
         mat = r["maturity"]
         if snap.as_of and mat is not None and not pd.isna(mat):
             if mat <= snap.as_of:
-                iss.add("Ошибка", "Погашение", "Бумага погашена на дату снимка.",
+                iss.add("Ошибка", "Погашение", "Бумага погашена на дату портфеля.",
                         r["label"], "Maturity", dfmt(mat), f"> {dfmt(snap.as_of)}")
                 continue
             yrs = years_between(snap.as_of, mat)

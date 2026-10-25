@@ -81,13 +81,13 @@ def render(rv: pd.DataFrame, changes: pd.DataFrame | None, cfg, prev_snap=None):
             "Премия, %": st.column_config.NumberColumn(format="%+.0f"),
             "Пиры": st.column_config.TextColumn(width="large")})
 
-    st.subheader("Аномальное расширение спреда между снимками")
+    st.subheader("Аномальное расширение спреда между портфелями")
     if changes is None:
-        st.info("Нужен предыдущий снимок (панель слева): здесь будут бумаги, спред которых вырос сильнее "
+        st.info("Нужен предыдущий портфель (панель слева): здесь будут бумаги, спред которых вырос сильнее "
                 "их рейтинговой группы.")
         return
     if changes.empty:
-        st.info("Нет общих бумаг с G-spread в обоих снимках.")
+        st.info("Нет общих бумаг с G-spread в обоих портфелях.")
         return
     an = changes[changes["Сигнал"] == "аномальное расширение"]
     st.caption(f"Сравнение с {prev_snap.as_of:%d.%m.%Y}. Сигнал — расширение больше медианы рейтинговой группы "

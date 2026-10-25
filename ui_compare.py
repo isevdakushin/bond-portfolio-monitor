@@ -1,4 +1,4 @@
-"""Вкладка «Сравнение снимков»."""
+"""Вкладка «Сравнение портфелей»."""
 from __future__ import annotations
 
 import pandas as pd
@@ -48,14 +48,14 @@ def _delta(v, kind):
 
 def render(cmp: Comparison | None, notes: list):
     if cmp is None:
-        st.info("Нужен предыдущий снимок (панель слева): здесь будет сравнение метрик, аллокации, позиций "
+        st.info("Нужен предыдущий портфель (панель слева): здесь будет сравнение метрик, аллокации, позиций "
                 "и рейтингов и разложение изменения YTM портфеля.")
         return
     for n in notes + cmp.notes:
         st.info(n)
     pos = cmp.positions
     n_new, n_rem = int((pos["Статус"] == "новая").sum()), int((pos["Статус"] == "выбыла").sum())
-    st.caption(f"Сравнение снимка {_d(cmp.cur_date)} с {_d(cmp.prev_date)}. Сопоставление по ISIN, затем по названию, "
+    st.caption(f"Портфель на {_d(cmp.cur_date)} против {_d(cmp.prev_date)}. Сопоставление по ISIN, затем по названию, "
                f"затем по эмитенту и погашению: осталось {int((pos['Статус'] == 'осталась').sum())}, "
                f"новых {n_new}, выбыло {n_rem}.")
 
@@ -93,7 +93,7 @@ def render(cmp: Comparison | None, notes: list):
                       yaxis=dict(autorange="reversed"))
     st.plotly_chart(fig, width="stretch", theme="streamlit")
     st.caption(f"Изменение YTM портфеля: {total:+.1f} бп, сумма вкладов. «Рынок UST» — сдвиг кривой Treasury "
-               "между датами снимков на срок каждой бумаги, по весам прошлого снимка.")
+               "между датами портфелей на срок каждой бумаги, по весам прошлого портфеля.")
     with st.expander("Разложение G-spread и дюрации"):
         for key in ("G-spread, бп", "Mod. duration, лет"):
             st.markdown(f"**{key}**")

@@ -49,14 +49,14 @@ def render(m: Market, dashboard_texts):
     st.subheader("Ключевые уровни")
     k = st.columns(4)
     if ca:
-        k[0].metric(f"10Y UST на дату снимка ({_d(ca.date)})", f"{ca.at(10) * 100:.2f}%")
+        k[0].metric(f"10Y UST на дату портфеля ({_d(ca.date)})", f"{ca.at(10) * 100:.2f}%")
     if cl:
-        delta = f"{(cl.at(10) - ca.at(10)) * 10000:+.0f} бп с даты снимка" if ca else None
+        delta = f"{(cl.at(10) - ca.at(10)) * 10000:+.0f} бп с даты портфеля" if ca else None
         k[1].metric(f"10Y UST сейчас ({_d(cl.date)})", f"{cl.at(10) * 100:.2f}%", delta, delta_color="off")
     if m.hy_asof and m.hy_asof[0]:
-        k[2].metric(f"HY OAS на дату снимка ({_d(m.hy_asof[0])})", f"{m.hy_asof[1]:.0f} бп")
+        k[2].metric(f"HY OAS на дату портфеля ({_d(m.hy_asof[0])})", f"{m.hy_asof[1]:.0f} бп")
     if m.hy_latest and m.hy_latest[0]:
-        delta = f"{m.hy_latest[1] - m.hy_asof[1]:+.0f} бп с даты снимка" if m.hy_asof and m.hy_asof[0] else None
+        delta = f"{m.hy_latest[1] - m.hy_asof[1]:+.0f} бп с даты портфеля" if m.hy_asof and m.hy_asof[0] else None
         k[3].metric(f"HY OAS сейчас ({_d(m.hy_latest[0])})", f"{m.hy_latest[1]:.0f} бп", delta, delta_color="off")
 
     st.markdown("**Источники**")
@@ -113,7 +113,7 @@ def render(m: Market, dashboard_texts):
             if m.as_of:
                 fig.add_vline(x=m.as_of, line=dict(color="#898781", width=1, dash="dot"))
             st.plotly_chart(_layout(fig, 300), width="stretch", theme="streamlit")
-            st.caption(f"Пунктир — дата снимка. Период {_d(s.index.min())}–{_d(s.index.max())}. "
+            st.caption(f"Пунктир — дата портфеля. Период {_d(s.index.min())}–{_d(s.index.max())}. "
                        f"Максимум: {s.max() * 100:.2f}% ({_d(s.idxmax())}); "
                        f"минимум: {s.min() * 100:.2f}% ({_d(s.idxmin())}).")
     if m.hy_series is not None and not m.hy_series.empty:
@@ -127,6 +127,6 @@ def render(m: Market, dashboard_texts):
             if m.as_of:
                 fig.add_vline(x=m.as_of, line=dict(color="#898781", width=1, dash="dot"))
             st.plotly_chart(_layout(fig, 300, yfmt=""), width="stretch", theme="streamlit")
-            st.caption(f"Пунктир — дата снимка. Период {_d(s.index.min())}–{_d(s.index.max())}. "
+            st.caption(f"Пунктир — дата портфеля. Период {_d(s.index.min())}–{_d(s.index.max())}. "
                        f"Максимум: {s.max():.0f} бп ({_d(s.idxmax())}); "
                        f"минимум: {s.min():.0f} бп ({_d(s.idxmin())}).")

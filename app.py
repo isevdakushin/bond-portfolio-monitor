@@ -62,10 +62,10 @@ def _compute(data, name, ov, prev_data, prev_name, prev_ov, corrections, cfg, _k
 
 def _sidebar(cfg):
     st.sidebar.header("Данные")
-    cur = st.sidebar.file_uploader("Текущий снимок портфеля", type=FILE_TYPES, key="cur",
+    cur = st.sidebar.file_uploader("Текущий портфель", type=FILE_TYPES, key="cur",
                                    help="Excel (.xlsx, .xlsm, .xls) или CSV. Листы и колонки определяются по названиям и содержимому.")
-    prev = st.sidebar.file_uploader("Предыдущий снимок для сравнения (необязательно)", type=FILE_TYPES, key="prev",
-                                    help="Для сравнения снимков и сигнала по расширению спредов.")
+    prev = st.sidebar.file_uploader("Предыдущий портфель для сравнения (необязательно)", type=FILE_TYPES, key="prev",
+                                    help="Для сравнения портфелей и сигнала по расширению спредов.")
     st.sidebar.download_button("Скачать шаблон файла (.xlsx)", build_template(), file_name="portfolio_template.xlsx",
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                help="Пустой Excel с нужными листами и колонками. Требования — во вкладке «Методология».")
@@ -78,7 +78,7 @@ def _sidebar(cfg):
         sample = next((p for p in samples if p.name == choice), None)
     prev_sample = None
     if prev is None and samples:
-        pchoice = st.sidebar.selectbox("Или пример предыдущего снимка", ["—"] + [p.name for p in samples], index=0)
+        pchoice = st.sidebar.selectbox("Или пример предыдущего портфеля", ["—"] + [p.name for p in samples], index=0)
         prev_sample = next((p for p in samples if p.name == pchoice), None)
 
     q = cfg["quality"]
@@ -168,7 +168,7 @@ def main():
         try:
             prev_snap = _load(prev_data, prev_name, ui_mapping.get_overrides(prev_name))
         except LoadError as e:
-            st.warning(f"Предыдущий снимок «{prev_name}» не прочитан: {e}")
+            st.warning(f"Предыдущий портфель «{prev_name}» не прочитан: {e}")
             prev_data = prev_name = None
     # Какой файл текущий (более поздний) — чтобы взять его поправки аналитика.
     cur_name = order_snapshots(snap, prev_snap)[0].source_name if prev_snap is not None else name
@@ -183,15 +183,15 @@ def main():
     corr_log = res.corrections if res.corrections is not None else ui_corrections.empty_log()
     ui_corrections.banner(corr_log)
     c1, c2, c3 = st.columns(3)
-    c1.metric("Дата снимка", snap.as_of.strftime("%d.%m.%Y") if snap.as_of else "не найдена")
+    c1.metric("Дата портфеля", snap.as_of.strftime("%d.%m.%Y") if snap.as_of else "не найдена")
     c2.metric("Позиций", len(snap.positions))
     c3.metric("Сумма весов", f"{snap.positions['weight'].sum() * 100:.2f}%")
-    st.caption(f"Файл: {name}" + (f" · предыдущий снимок: {prev_name} "
+    st.caption(f"Файл: {name}" + (f" · предыдущий портфель: {prev_name} "
                                   f"({prev_snap.as_of:%d.%m.%Y})" if prev_snap and prev_snap.as_of else ""))
 
     tab_q, tab_a, tab_mk, tab_g, tab_s, tab_r, tab_c, tab_e, tab_rep, tab_p, tab_m = st.tabs(
         ["1. Качество данных", "2. Аналитика", "3. Рыночные данные", "4. G-spread", "5. Сигналы по спредам",
-         "6. Правила добора", "7. Сравнение снимков", "8. Оценка на сегодня и стресс", "9. Отчёт",
+         "6. Правила добора", "7. Сравнение портфелей", "8. Оценка на сегодня и стресс", "9. Отчёт",
          "Позиции (как загружены)", "Методология"])
 
     with tab_m:
@@ -223,7 +223,7 @@ def main():
 
     with tab_g:
         if res.gspread is None:
-            st.warning("Нет кривой UST на дату снимка, G-spread не пересчитан.")
+            st.warning("Нет кривой UST на дату портфеля, G-spread не пересчитан.")
         else:
             ui_gspread.render(res.gspread, cfg)
 

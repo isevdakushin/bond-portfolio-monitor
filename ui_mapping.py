@@ -43,7 +43,7 @@ def render(name, detected: dict, as_of=None, expanded=False):
                                                     index=options.index(cur) if cur in options else 0, key=f"{name}-{key}")
             st.caption("Звёздочка (\\*): нужны YTM и хотя бы по одному полю из пар «Issuer / ISIN» "
                        "и «Weight / Market value».")
-            date_val = st.date_input("Дата снимка (если не найдена в файле или неверна)",
+            date_val = st.date_input("Дата портфеля (если не найдена в файле или неверна)",
                                      value=current.get("as_of") or as_of, format="DD.MM.YYYY")
             applied = st.form_submit_button("Применить")
         if applied:

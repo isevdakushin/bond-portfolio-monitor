@@ -1,4 +1,4 @@
-"""Полный расчёт по снимку (и, если есть, предыдущему снимку) — один вход для интерфейса, скрипта и отчёта."""
+"""Полный расчёт по портфелю (и, если есть, предыдущему портфелю) — один вход для интерфейса, скрипта и отчёта."""
 from __future__ import annotations
 
 import datetime as dt
@@ -38,14 +38,14 @@ class Results:
     stress: dict | None = None
     notes: list = field(default_factory=list)
     today: dt.date = field(default_factory=dt.date.today)
-    snap_raw: Snapshot | None = None           # снимок до поправок аналитика (для подсказок и выгрузки)
+    snap_raw: Snapshot | None = None           # портфель до поправок аналитика (для подсказок и выгрузки)
 
 
 def run(snap: Snapshot, cfg: dict, prev: Snapshot | None = None, fred_key: str | None = None,
         market: Market | None = None, market_prev: Market | None = None, use_market: bool = True,
         curves_hist: pd.DataFrame | None = None, today: dt.date | None = None,
         corrections: list | None = None) -> Results:
-    """Весь расчёт за один вызов. Порядок: упорядочить снимки → унаследовать цели → применить поправки
+    """Весь расчёт за один вызов. Порядок: упорядочить портфели → унаследовать цели → применить поправки
     аналитика → проверки, аналитика, рынок, G-spread, сигналы, правила, стресс, оценка, сравнение.
     market / market_prev / curves_hist можно передать готовыми."""
     notes = []
