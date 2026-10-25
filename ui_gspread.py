@@ -1,7 +1,6 @@
 """Вкладка «G-spread»: независимый пересчёт и сверка с файлом."""
 from __future__ import annotations
 
-import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 

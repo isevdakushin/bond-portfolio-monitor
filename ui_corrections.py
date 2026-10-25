@@ -21,6 +21,10 @@ def _set(name, items):
     st.session_state[state_key(name)] = items
 
 
+def empty_log() -> pd.DataFrame:
+    return C.apply(None, [])[1]
+
+
 def banner(log: pd.DataFrame):
     if log is None or log.empty:
         return

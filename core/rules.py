@@ -174,7 +174,6 @@ def evaluate(snap: Snapshot, market, cfg: dict, today: dt.date | None = None) ->
     any_ladder_now = False
     for i, step in enumerate(rules.ladder, start=1):
         touch = _first_touch(market.ust10_series, as_of, step["lower"])
-        at_snap = ust_snap is not None and ust_snap >= step["lower"]
         now = ust_last is not None and ust_last >= step["lower"]
         tgt_after = step.get("target_after")
         done = tgt_after is not None and long_now >= tgt_after - 1e-9

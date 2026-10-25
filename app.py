@@ -1,46 +1,35 @@
-"""Интерфейс Streamlit. Только отображение: все расчёты — в пакете core."""
+"""Интерфейс Streamlit. Только отображение: весь расчёт — один вызов core.pipeline.run (кэшируется)."""
 from __future__ import annotations
 
-import datetime as dt
 import os
 from pathlib import Path
 
-import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
 import ui_analytics
-import ui_gspread
-import ui_market
 import ui_compare
 import ui_corrections
-from core.corrections import apply as apply_corrections
 import ui_estimate
-import ui_report
-from core.pipeline import run as run_pipeline
-from core.report import build as build_report
-import ui_rules
-from core.snapshots import compare as compare_snapshots
-from core.snapshots import inherit_targets, order_snapshots
-import ui_signals
-from core.rules import evaluate as evaluate_rules
-from core.gspread import recompute
-from core.signals import relative_value, spread_changes
-from core.market import curves_between, load_market
+import ui_gspread
 import ui_mapping
+import ui_market
 import ui_methodology
-from core.template import build_template
-from core.analytics import analyze
+import ui_report
+import ui_rules
+import ui_signals
 from core.config import load_config, merged
 from core.loader import LoadError, load_snapshot
-from core.quality import run_checks, summary
+from core.pipeline import run as run_pipeline
+from core.quality import summary
+from core.report import build as build_report
+from core.snapshots import order_snapshots
+from core.template import build_template
 
 st.set_page_config(page_title="Анализ портфеля еврооблигаций", layout="wide")
 
 SAMPLE = Path(__file__).parent / "Main_Portfolio_14_09_26_v2.xlsx"
 LEVEL_COLORS = {"Ошибка": "#f8d7da", "Предупреждение": "#fff3cd", "Инфо": "#e7f1ff"}
-
-
 FILE_TYPES = ["xlsx", "xlsm", "xls", "csv"]
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -56,24 +45,19 @@ def _secret(name):
     return (v or "").strip() or None
 
 
-@st.cache_data(ttl=3600, show_spinner="Загружаю данные Treasury и FRED…")
-def _market(as_of, _key, key_present: bool):
-    return load_market(as_of, _key)
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def _curves(as_of, window_days):
-    if as_of is None:
-        return None
-    try:
-        return curves_between(as_of - dt.timedelta(days=window_days), as_of)
-    except Exception:  # noqa: BLE001 — диагностика необязательна
-        return None
-
-
 @st.cache_data(show_spinner=False)
 def _load(data: bytes, name: str, overrides: dict):
     return load_snapshot(data, name=name, overrides=overrides)
+
+
+@st.cache_data(ttl=3600, show_spinner="Считаю: проверки, аналитика, рынок Treasury/FRED, сигналы, отчёт…")
+def _compute(data, name, ov, prev_data, prev_name, prev_ov, corrections, cfg, _key, key_present: bool):
+    """Единый расчёт (тот же, что у скрипта run_report.py). Кэш — по содержимому файлов, ручным правкам,
+    поправкам и настройкам; рыночные данные обновляются не чаще раза в час."""
+    snap = _load(data, name, ov)
+    prev = _load(prev_data, prev_name, prev_ov) if prev_data else None
+    res = run_pipeline(snap, cfg, prev=prev, fred_key=_key, corrections=corrections)
+    return res, build_report(res)
 
 
 def _sidebar(cfg):
@@ -181,23 +165,25 @@ def main():
         st.rerun()
 
     sources = {name: data}
-    prev_snap, cmp_notes = None, []
+    prev_snap = None
     if prev_data:
         sources[prev_name] = prev_data
         try:
             prev_snap = _load(prev_data, prev_name, ui_mapping.get_overrides(prev_name))
         except LoadError as e:
             st.warning(f"Предыдущий снимок «{prev_name}» не удалось разобрать: {e}")
-    if prev_snap is not None:
-        snap, prev_snap, note = order_snapshots(snap, prev_snap)
-        if note:
-            cmp_notes.append(note)
-            name, prev_name = snap.source_name, prev_snap.source_name
-        snap, inh = inherit_targets(snap, prev_snap)
-        cmp_notes += inh
-    # Поправки аналитика — поверх текущего снимка; исходный файл не меняется.
-    snap_raw = snap
-    snap, corr_log = apply_corrections(snap_raw, ui_corrections.get(name))
+            prev_data = prev_name = None
+    # Какой файл текущий (более поздний) — чтобы взять его поправки аналитика.
+    cur_name = order_snapshots(snap, prev_snap)[0].source_name if prev_snap is not None else name
+
+    key = _secret("FRED_API_KEY")
+    res, report = _compute(data, name, ui_mapping.get_overrides(name), prev_data, prev_name,
+                           ui_mapping.get_overrides(prev_name) if prev_name else {}, ui_corrections.get(cur_name),
+                           cfg, key, key is not None)
+    snap, prev_snap, mk = res.snap, res.prev, res.market
+    name = snap.source_name
+    prev_name = prev_snap.source_name if prev_snap is not None else None
+    corr_log = res.corrections if res.corrections is not None else ui_corrections.empty_log()
     ui_corrections.banner(corr_log)
     c1, c2, c3 = st.columns(3)
     c1.metric("Дата снимка", snap.as_of.strftime("%d.%m.%Y") if snap.as_of else "не найдена")
@@ -214,58 +200,8 @@ def main():
     with tab_m:
         ui_methodology.render(cfg)
 
-    key = _secret("FRED_API_KEY")
-    mk = _market(snap.as_of, key, key is not None)
-    with tab_mk:
-        ui_market.render(mk, snap.dashboard_texts)
-
-    gs = None
-    if mk.curve_asof is not None:
-        gs = recompute(snap, mk.curve_asof, cfg, _curves(snap.as_of, cfg["gspread"]["implied_date_window_days"]))
-    with tab_g:
-        if gs is None:
-            st.warning("Нет кривой UST на дату снимка — пересчёт G-spread невозможен (подстановок нет).")
-        else:
-            ui_gspread.render(gs, cfg)
-
-    with tab_s:
-        spread = None
-        if cfg["signals"]["spread_source"] == "recomputed":
-            if gs is None:
-                st.warning("Пересчитанный G-spread недоступен — сигналы считаются по G-spread из файла.")
-            else:
-                spread = pd.Series(gs.table["G (срок)" if gs.primary == "maturity" else "G (дюрация)"].values,
-                                   index=snap.positions.index)
-        ui_signals.render(relative_value(snap, cfg, spread),
-                          spread_changes(snap, prev_snap, cfg) if prev_snap is not None else None, cfg, prev_snap)
-
-    with tab_r:
-        ui_rules.render(evaluate_rules(snap, mk, cfg), mk, snap.as_of)
-
-    mk_prev = _market(prev_snap.as_of, key, key is not None) if prev_snap is not None else None
-    with tab_c:
-        cmp = None
-        if prev_snap is not None:
-            cmp = compare_snapshots(snap, prev_snap, cfg, mk.curve_asof, mk_prev.curve_asof)
-        ui_compare.render(cmp, cmp_notes)
-
-    res = run_pipeline(snap, cfg, prev=prev_snap, market=mk, market_prev=mk_prev, fred_key=key,
-                       curves_hist=_curves(snap.as_of, cfg["gspread"]["implied_date_window_days"]))
-    res.notes = cmp_notes + res.notes
-    res.corrections = corr_log
-    with tab_e:
-        ui_estimate.render_estimate(res.estimate, mk.errors + [n for n in res.notes if "Оценка" in n])
-        st.divider()
-        ui_estimate.render_stress(snap, res.stress)
-
-    with tab_rep:
-        ui_report.render(build_report(res), snap.as_of.strftime("%Y-%m-%d") if snap.as_of else "portfolio")
-
-    with tab_a:
-        ui_analytics.render(analyze(snap, cfg))
-
     with tab_q:
-        issues = run_checks(snap, cfg)
+        issues = res.quality
         s = summary(issues)
         k1, k2, k3 = st.columns(3)
         k1.metric("Ошибки", s["Ошибка"])
@@ -280,9 +216,45 @@ def main():
         st.download_button("Скачать таблицу проверок (CSV)", issues.to_csv(index=False).encode("utf-8-sig"),
                            file_name="quality_checks.csv", mime="text/csv")
         st.divider()
-        ui_corrections.render(snap_raw, name, corr_log, sources.get(name, data))
+        ui_corrections.render(res.snap_raw, name, corr_log, sources.get(name, data))
+
+    with tab_a:
+        ui_analytics.render(res.analysis)
+
+    with tab_mk:
+        ui_market.render(mk, snap.dashboard_texts)
+
+    with tab_g:
+        if res.gspread is None:
+            st.warning("Нет кривой UST на дату снимка — пересчёт G-spread невозможен (подстановок нет).")
+        else:
+            ui_gspread.render(res.gspread, cfg)
+
+    with tab_s:
+        if cfg["signals"]["spread_source"] == "recomputed" and res.gspread is None:
+            st.warning("Пересчитанный G-spread недоступен — сигналы считаются по G-spread из файла.")
+        ui_signals.render(res.signals, res.spread_changes, cfg, prev_snap)
+
+    with tab_r:
+        if res.rules is None:
+            st.warning("Нет рыночных данных — правила добора не проверены.")
+        else:
+            ui_rules.render(res.rules, mk, snap.as_of)
+
+    with tab_c:
+        ui_compare.render(res.comparison, [n for n in res.notes if not n.startswith("Оценка")])
+
+    with tab_e:
+        ui_estimate.render_estimate(res.estimate, (mk.errors if mk else []) + [n for n in res.notes if "Оценка" in n])
+        st.divider()
+        ui_estimate.render_stress(snap, res.stress)
+
+    with tab_rep:
+        ui_report.render(report, snap.as_of.strftime("%Y-%m-%d") if snap.as_of else "portfolio")
 
     with tab_p:
+        if res.corrections is not None and (res.corrections["Статус"] == "применена").any():
+            st.caption("С учётом поправок аналитика (исходные значения — в журнале поправок, вкладка «1. Качество данных»).")
         cols = ["num", "sleeve", "weight", "isin", "issuer", "coupon", "maturity", "name_maturity", "ytm",
                 "gspread", "mod_duration", "region", "country", "sector", "rating", "credit_bucket",
                 "instrument_type"]

@@ -13,7 +13,7 @@ import pandas as pd
 
 from . import ratings
 from .bondmath import isin_valid, modified_duration, years_between
-from .loader import Snapshot, map_sleeves, norm
+from .loader import Snapshot, norm
 
 SEVERITY_ORDER = {"Ошибка": 0, "Предупреждение": 1, "Инфо": 2}
 COLUMNS = ["Уровень", "Категория", "Позиция", "Поле", "В файле", "Расчёт / ожидание", "Комментарий"]

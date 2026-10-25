@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from .analytics import Analysis, analyze
+from .corrections import apply as apply_corrections
 from .estimate import Estimate, estimate
 from .stress import run_all as run_stress
 from .gspread import GSpreadResult, recompute
@@ -37,20 +38,27 @@ class Results:
     stress: dict | None = None
     notes: list = field(default_factory=list)
     today: dt.date = field(default_factory=dt.date.today)
+    snap_raw: Snapshot | None = None           # снимок до поправок аналитика (для подсказок и выгрузки)
 
 
 def run(snap: Snapshot, cfg: dict, prev: Snapshot | None = None, fred_key: str | None = None,
         market: Market | None = None, market_prev: Market | None = None, use_market: bool = True,
-        curves_hist: pd.DataFrame | None = None, today: dt.date | None = None) -> Results:
-    """market / market_prev / curves_hist можно передать готовыми (интерфейс кэширует их)."""
+        curves_hist: pd.DataFrame | None = None, today: dt.date | None = None,
+        corrections: list | None = None) -> Results:
+    """Весь расчёт за один вызов. Порядок: упорядочить снимки → унаследовать цели → применить поправки
+    аналитика → проверки, аналитика, рынок, G-spread, сигналы, правила, стресс, оценка, сравнение.
+    market / market_prev / curves_hist можно передать готовыми."""
     notes = []
     if prev is not None:
         snap, prev, note = order_snapshots(snap, prev)
         notes += [note] if note else []
         snap, inh = inherit_targets(snap, prev)
         notes += inh
+    snap_raw = snap
+    snap, corr_log = apply_corrections(snap_raw, corrections or [])
     r = Results(snap=snap, cfg=cfg, quality=run_checks(snap, cfg), analysis=analyze(snap, cfg), prev=prev,
-                notes=notes, today=today or dt.date.today())
+                notes=notes, today=today or dt.date.today(), snap_raw=snap_raw,
+                corrections=corr_log if corrections else None)
     if use_market:
         r.market = market or load_market(snap.as_of, fred_key, today=today)
         if prev is not None:

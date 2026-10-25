@@ -67,7 +67,6 @@ def test_fallback_to_config(snap):
 
 def test_evaluation_on_market_data(snap, mk):
     ev = evaluate(snap, mk, load_config(), today=TODAY)
-    t = ev["table"].set_index("Показатель")
     hy = ev["table"][ev["table"]["Правило"].str.startswith("HY OAS")].iloc[0]
     assert hy["Статус"] == "сработало сейчас" and "14.10.2026" in hy["Касание с даты снимка"]
     ladder = ev["table"][ev["table"]["Правило"].str.startswith("Лестница")]

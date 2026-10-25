@@ -6,7 +6,6 @@
 """
 from __future__ import annotations
 
-import datetime as dt
 import html
 import re
 from dataclasses import dataclass, field
