@@ -18,7 +18,17 @@ def test_every_column_documented():
     md = markdown(load_config())
     for k in PORTFOLIO_COLUMNS:
         assert f"**{COLUMN_LABELS[k]}**" in md
-    assert "Требования к загружаемому файлу" in md and "Как пользоваться" in md
+    assert "Быстрый старт" in md and "Требования к файлу: все колонки и листы" in md
+
+
+def test_user_guide_has_no_developer_details():
+    """Инструкция и подробная методология в приложении — без путей к файлам, скриптов и папок."""
+    import re
+    from core.methodology import details, guide
+    cfg = load_config()
+    for title, body in guide(cfg) + details(cfg):
+        assert not re.search(r"config\.yaml|core/|run_report|cache/|output/|samples|tests/|\.py\b", body), title
+    assert sum(len(b) for _, b in guide(cfg)) < 6000              # короткая инструкция действительно короткая
 
 
 def test_template_headers_recognized():
