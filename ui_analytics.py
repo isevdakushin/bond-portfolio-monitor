@@ -5,6 +5,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from core import narrative as N
 from core.analytics import Analysis
 
 # Категориальные цвета (проверенная палитра): 1 — синий, 2 — оранжевый.
@@ -56,13 +57,18 @@ def render(an: Analysis):
     k[3].metric("G-spread", f"{m['gspread']:.0f} бп", f"{gg:+.0f} бп к цели" if pd.notna(gg) else None,
                 delta_color="off")
     k2 = st.columns(4)
-    k2[0].metric("Средний рейтинг", m["avg_rating"] or "—", help="Средневзвешенный балл шкалы (AAA=1 … BBB-=10), "
-                 "округлённый до ступени.")
+    k2[0].metric("Средний рейтинг", m["avg_rating"] or "—", help="Каждой ступени шкалы присвоен балл (AAA = 1, …, "
+                 "BBB- = 10); баллы взвешены по долям позиций и округлены до ближайшей ступени.")
     k2[1].metric("IG / HY / кэш, %", f"{m['ig_share'] * 100:.0f}/{m['hy_share'] * 100:.0f}/"
                  f"{m['cash_share'] * 100:.0f}")
     k2[2].metric("EM", f"{m['em_share'] * 100:.1f}%")
     k2[3].metric("Эмитентов (эффективно)", f"{m['n_issuers']} ({m['effective_issuers']:.0f})",
-                 help="Эффективное число = 1 / индекс Херфиндаля по долям эмитентов (без кэша).")
+                 help="В скобках — эффективное число эмитентов: 1 / индекс Херфиндаля по их долям (без "
+                      "денежных позиций). Чем оно меньше общего числа эмитентов, тем сильнее портфель "
+                      "сконцентрирован в крупных позициях.")
+    txt = N.targets(an.targets, m, an.proforma)
+    if txt:
+        st.markdown(txt)
 
     tt = an.targets.drop(columns="key").copy()
     for c in ("Текущее", "Цель", "Отклонение", "Pro forma при целевой аллокации"):
@@ -76,7 +82,7 @@ def render(an: Analysis):
         st.caption(n)
 
     if an.allocation is not None:
-        st.subheader("Аллокация по sleeve: текущая против целевой")
+        st.subheader("Аллокация по сегментам: текущая и целевая")
         a = an.allocation
         fig = go.Figure()
         fig.add_bar(y=a["Sleeve"], x=a["Текущее"] * 100, name="Текущая", orientation="h", marker_color=C1,
@@ -88,6 +94,9 @@ def render(an: Analysis):
                      column_config={c: st.column_config.NumberColumn(c + ", %", format="%.1f")
                                     for c in ("Цель", "Текущее")} |
                      {"Отклонение": st.column_config.NumberColumn("Отклонение, п.п.", format="%+.1f")})
+        txt = N.allocation(a)
+        if txt:
+            st.markdown(txt)
 
     st.subheader("Концентрации и лимиты")
     c = an.concentration
@@ -95,10 +104,10 @@ def render(an: Analysis):
     ccfg = {"Доля": st.column_config.NumberColumn("Доля, %", format="%.1f"),
             "Лимит": st.column_config.NumberColumn("Лимит, %", format="%.1f")}
     if flagged.empty:
-        st.success("Лимиты концентрации соблюдены.")
-    else:
-        st.dataframe(_style_status(_pct(flagged, ["Доля", "Лимит"])), hide_index=True, width="stretch",
-                     column_config=ccfg)
+        st.success("Все лимиты концентрации соблюдены: ни эмитенты, ни страны, ни секторы, ни доли EM и HY не "
+                   "превышают лимиты и не приближаются к ним.")
+    for _, r in flagged.iterrows():
+        (st.error if r["Статус"] == "превышен" else st.warning)(N.concentration(r))
     with st.expander("Все проверки лимитов"):
         st.dataframe(_pct(c, ["Доля", "Лимит"]), hide_index=True, width="stretch", column_config=ccfg)
 
@@ -122,8 +131,9 @@ def render(an: Analysis):
                      "Вклад в YTM": st.column_config.NumberColumn("Вклад в YTM, п.п.", format="%.2f"),
                      "Вклад в дюрацию": st.column_config.NumberColumn(format="%.2f"),
                      "Доля DTS": st.column_config.NumberColumn("Доля кредитного риска (DTS), %", format="%.1f",
-                                                               help="DTS = mod. duration × G-spread. Доля группы "
-                                                                    "в спредовом риске портфеля."),
+                                                               help="DTS — модифицированная дюрация × G-spread. "
+                                                                    "Показывает, какую долю чувствительности портфеля "
+                                                                    "к изменению спредов даёт группа."),
                  })
 
     st.subheader("Позиции: вклад в метрики и кредитный риск")

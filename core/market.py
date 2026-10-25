@@ -80,7 +80,7 @@ def _fetch(url, params=None, timeout=30, retries=3):
         except requests.RequestException as e:   # повтор с паузой: 1, 2 сек
             last = e
             time.sleep(1 + i)
-    raise MarketDataError(f"Источник недоступен: {type(last).__name__}")
+    raise MarketDataError(f"источник недоступен ({type(last).__name__}); стоит повторить попытку позже")
 
 
 def _with_cache(name, fetch_text, max_age_hours):
@@ -155,7 +155,7 @@ def ust_curve(on: dt.date) -> Curve:
     df = pd.concat(frames).sort_index()
     df = df[df.index <= on].dropna(how="all")
     if df.empty:
-        raise MarketDataError(f"В данных Treasury нет кривой на {on:%d.%m.%Y} или раньше.")
+        raise MarketDataError(f"в данных Treasury нет кривой на {on:%d.%m.%Y} или ранее")
     d = df.index[-1]
     row = df.loc[d]
     return Curve(requested=on, date=d, tenors=list(row.index), yields=list(row.values),
@@ -271,21 +271,21 @@ def load_market(as_of: dt.date | None, fred_key: str | None, today: dt.date | No
     try:
         m.curve_asof = ust_curve(ref)
     except MarketDataError as e:
-        m.errors.append(f"Кривая UST на дату портфеля: {e}")
+        m.errors.append(f"Кривая UST на дату портфеля не получена: {e}")
     try:
         m.curve_latest = ust_curve(today)
     except MarketDataError as e:
-        m.errors.append(f"Последняя кривая UST: {e}")
+        m.errors.append(f"Последняя кривая UST не получена: {e}")
     try:
         m.ust10_series = ust_series(10.0, ref - dt.timedelta(days=history_days), today)
     except MarketDataError as e:
-        m.errors.append(f"Ряд 10Y UST: {e}")
+        m.errors.append(f"История доходности 10-летних UST не получена: {e}")
     try:
         m.hy_series, m.hy_meta = hy_oas_series(fred_key, start=ref - dt.timedelta(days=max(history_days, 400)))
         m.hy_asof = value_on(m.hy_series, ref)
         m.hy_latest = value_on(m.hy_series, today)
     except (MarketDataError, KeyError, ValueError) as e:
-        m.errors.append(f"HY OAS (FRED): {e}")
+        m.errors.append(f"Спред HY OAS (FRED) не получен: {e}")
     return m
 
 

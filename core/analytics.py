@@ -122,7 +122,9 @@ def analyze(snap: Snapshot, cfg: dict) -> Analysis:
     allocation, proforma = _allocation(snap, p, a_cfg)
     if proforma:
         targets["Pro forma при целевой аллокации"] = targets["key"].map(proforma)
-        notes.append("Pro forma — метрики при целевых долях sleeve и прежнем составе бумаг внутри sleeve.")
+        notes.append("Pro forma показывает метрики портфеля при доведении долей сегментов до целевых и "
+                     "сохранении нынешнего состава бумаг внутри каждого сегмента. Это ориентир того, к каким YTM "
+                     "и дюрации приведёт выполнение целевой аллокации.")
 
     breakdowns = {
         "Sleeve": _breakdown(p, "sleeve", "Sleeve"),

@@ -30,24 +30,28 @@ def banner(log: pd.DataFrame):
         return
     n_ok = int((log["Статус"] == "применена").sum())
     n_bad = len(log) - n_ok
-    msg = f"**Поправок аналитика: {n_ok}.** Расчёты и отчёт — по исправленным данным, исходный файл не изменён."
+    msg = (f"**Применено поправок аналитика: {n_ok}.** Все расчёты и отчёт построены по исправленным данным; "
+           "исходный файл компании не изменён.")
     if n_bad:
-        msg += f" Не применено: {n_bad} (значение в файле изменилось или позиции нет), см. «Качество данных»."
+        msg += (f" Ещё {n_bad} не применено: значение в файле уже отличается от «было» или позиции нет. Подробности — "
+                "в журнале поправок на вкладке «1. Качество данных».")
     st.warning(msg)
 
 
 def render(snap_raw, name: str, log: pd.DataFrame, source: bytes):
     st.subheader("Поправки аналитика")
-    st.caption("Исправления поверх файла компании: файл не меняется, каждая поправка — с основанием и попадает в "
-               "журнал отчёта. Поправка применяется, только если в файле всё ещё значение «было», поэтому файл "
-               "поправок можно подгружать и к следующему файлу.")
+    st.caption("Поправки позволяют исправить ошибку в данных, не меняя файл компании: исправление применяется "
+               "поверх файла, у каждой поправки есть основание, и все они попадают в журнал отчёта. Поправка "
+               "срабатывает, только если в файле по-прежнему стоит значение «было», поэтому файл поправок можно "
+               "загрузить и к следующему файлу: исправленные командой данные он не перезапишет.")
     items = get(name)
     done = {(c["label"], c["field"]) for c in items}
 
     sugg = [s for s in C.suggest(snap_raw) if (s["label"], s["field"]) not in done]
     if sugg:
-        st.markdown("**Подсказки** — значения следуют из самого файла или из расчёта. Нужные отмечаются галочкой, "
-                    "значение и основание можно править.")
+        st.markdown("**Подсказки.** Предлагаемые значения следуют из самого файла (например, дата погашения из "
+                    "названия бумаги) или из расчёта. Чтобы применить подсказку, её нужно отметить; значение и "
+                    "основание можно отредактировать.")
         cur = snap_raw.positions.set_index("label")
         df = pd.DataFrame([{"Применить": False, "Позиция": s["label"], "Поле": C.FIELDS[s["field"]][0],
                             "Сейчас": C.fmt_value(s["field"], cur.loc[s["label"], s["field"]]),
@@ -75,8 +79,9 @@ def render(snap_raw, name: str, log: pd.DataFrame, source: bytes):
             c1, c2 = st.columns(2)
             lab = c1.selectbox("Позиция", labels)
             field = c2.selectbox("Поле", list(C.FIELDS), format_func=lambda f: C.FIELDS[f][0])
-            val = st.text_input("Новое значение", help="Даты — ДД.ММ.ГГГГ; YTM, купон, вес — в процентах (4,5); "
-                                                       "дюрация — в годах; G-spread — в бп; рейтинг — S&P/Fitch или Moody's.")
+            val = st.text_input("Новое значение", help="Даты указываются в формате ДД.ММ.ГГГГ; YTM, купон и вес — в "
+                                                       "процентах (например, 4,5); дюрация — в годах; G-spread — в "
+                                                       "базисных пунктах; рейтинг — по шкале S&P/Fitch или Moody's.")
             reason = st.text_input("Основание (обязательно)")
             if st.form_submit_button("Добавить"):
                 try:
@@ -99,12 +104,14 @@ def render(snap_raw, name: str, log: pd.DataFrame, source: bytes):
             st.rerun()
         c2.download_button("Файл поправок (JSON)", C.to_json(items).encode("utf-8"),
                            file_name=f"corrections_{Path(name).stem}.json", mime="application/json",
-                           help="Те же поправки для следующего файла.")
+                           help="Файл с поправками можно загрузить вместе со следующим файлом портфеля, чтобы "
+                                "применить те же исправления.")
         xlsx = C.corrected_excel(source, snap_raw, log) if Path(name).suffix.lower() in (".xlsx", ".xlsm") else None
         if xlsx:
             c3.download_button("Исправленный Excel", xlsx, file_name=f"{Path(name).stem}_исправлено.xlsx",
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                               help="Копия файла: изменённые ячейки подсвечены и с примечанием, журнал — на отдельном листе.")
+                               help="Копия файла компании, в которой изменённые ячейки подсвечены и снабжены "
+                                    "примечанием, а журнал поправок вынесен на отдельный лист.")
         c4.download_button("Журнал (CSV)", view.drop(columns="Отменить").to_csv(index=False).encode("utf-8-sig"),
                            file_name="corrections_log.csv", mime="text/csv")
 
@@ -115,4 +122,4 @@ def render(snap_raw, name: str, log: pd.DataFrame, source: bytes):
             st.session_state[f"loaded::{name}"] = up.file_id
             st.rerun()
         except (C.CorrectionError, ValueError) as e:
-            st.error(f"Файл поправок не загружен: {e}")
+            st.error(f"Файл поправок не загружен. {e}")

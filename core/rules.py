@@ -20,6 +20,8 @@ from .loader import Snapshot
 
 MONTHS_RU = {"январ": 1, "феврал": 2, "март": 3, "апрел": 4, "ма": 5, "июн": 6, "июл": 7, "август": 8,
              "сентябр": 9, "октябр": 10, "ноябр": 11, "декабр": 12}
+MONTH_GEN = {1: "января", 2: "февраля", 3: "марта", 4: "апреля", 5: "мая", 6: "июня", 7: "июля", 8: "августа",
+             9: "сентября", 10: "октября", 11: "ноября", 12: "декабря"}
 _NUM = r"(\d+(?:[.,]\d+)?)"
 
 
@@ -184,7 +186,10 @@ def evaluate(snap: Snapshot, market, cfg: dict, today: dt.date | None = None) ->
 
     fund_long = _funding(snap, ("long",), ("t-bill", "т-бил", "кэш", "cash"), rules.sleeve_keyword)
     fund_hy = _funding(snap, (rules.hy_instrument.lower(),), ("финансир", "сокращ"), rules.sleeve_keyword)
-    rows, actions = [], []
+    q_long = _quote(snap, ("long",), ("t-bill", "т-бил", "кэш", "cash"))
+    q_hy = _quote(snap, (rules.hy_instrument.lower(),), ("финансир", "сокращ"))
+    over = _overweights(snap, rules.sleeve_keyword)
+    rows, actions, steps = [], [], []
     target = long_now
     any_ladder_now = False
     for i, step in enumerate(rules.ladder, start=1):
@@ -200,6 +205,8 @@ def evaluate(snap: Snapshot, market, cfg: dict, today: dt.date | None = None) ->
             status = "уровень достигался, сейчас ниже"
         else:
             status = "не сработало"
+        steps.append({"n": i, "lower": step["lower"], "upper": step["upper"], "touch": touch, "now": now,
+                      "done": done})
         rows.append({
             "Правило": f"Лестница, шаг {i}: 10Y {_p(step['lower'])}–{_p(step['upper'])}% → "
                        f"+{_g(step['add'])}% NAV в Long IG" + (f" (до {_g(tgt_after)}%)" if tgt_after else ""),
@@ -214,18 +221,22 @@ def evaluate(snap: Snapshot, market, cfg: dict, today: dt.date | None = None) ->
             target = max(target, add_to)
     if target > long_now + 1e-9:
         reached = [r for r in rows if r["Статус"] in ("сработало сейчас", "уровень достигался, сейчас ниже")]
+        data = {"kind": "ladder_now" if any_ladder_now else "ladder_check", "sleeve": long_sleeve,
+                "from": long_now, "to": target, "steps": [s for s in steps if not s["done"] and (s["now"] or s["touch"])],
+                "ust_last": ust_last, "ust_date": ust_last_date, "funding_quote": q_long, "funding_alt": over,
+                "calendar": rules.calendar}
         if any_ladder_now:
             actions.append({"Приоритет": 1, "Действие": f"Довести {long_sleeve or 'Long IG'} с {_p(long_now, 1)}% "
                             f"до {_p(target, 1)}% NAV (+{_p(target - long_now, 1)} п.п.)",
                             "Основание": "10Y в зоне лестницы: " + "; ".join(_step(r) for r in reached),
-                            "Финансирование": fund_long})
+                            "Финансирование": fund_long, "data": data})
         else:
             actions.append({"Приоритет": 2, "Действие": f"Проверить добор {long_sleeve or 'Long IG'} до "
                             f"{_p(target, 1)}% NAV (+{_p(target - long_now, 1)} п.п.)",
                             "Основание": "10Y заходил в зоны лестницы после даты портфеля, сейчас ниже: "
                                          + "; ".join(f"{_step(r)} — касание {r['Касание с даты портфеля']}" for r in reached),
                             "Финансирование": fund_long + ". Если добор не сделан — при возврате 10Y в зону "
-                                                          "или на календарном пересмотре"})
+                                                          "или на календарном пересмотре", "data": data})
 
     # HY OAS → IBHJ
     if rules.hy_trigger_bp is not None:
@@ -250,7 +261,12 @@ def evaluate(snap: Snapshot, market, cfg: dict, today: dt.date | None = None) ->
                             "Основание": f"HY OAS {hy_last:.0f} бп на {hy_last_date:%d.%m.%Y} выше триггера "
                                          f"{rules.hy_trigger_bp:.0f} бп"
                                          + (f"; триггер пробит {touch[0]:%d.%m.%Y}" if touch else ""),
-                            "Финансирование": fund_hy})
+                            "Финансирование": fund_hy,
+                            "data": {"kind": "hy_now" if now else "hy_check", "inst": rules.hy_instrument,
+                                     "inst_name": re.sub(r"^#\d+\s+", "", str(p.loc[inst_mask, "label"].iloc[0])),
+                                     "from": hy_now, "to": rules.hy_to, "trigger": rules.hy_trigger_bp,
+                                     "last": hy_last, "last_date": hy_last_date, "touch": touch,
+                                     "funding_quote": q_hy, "funding_alt": over}})
 
     # Календарь
     reviews = next_reviews(rules.calendar, today)
@@ -260,7 +276,8 @@ def evaluate(snap: Snapshot, market, cfg: dict, today: dt.date | None = None) ->
     cal_status = (f"пересмотр {passed[-1]:%d.%m.%Y} прошёл" if passed else
                   f"следующий пересмотр {reviews[0]:%d.%m.%Y} (через {(reviews[0] - today).days} дн.)" if reviews else "—")
     rows.append({
-        "Правило": "Календарь: " + ", ".join(f"{d:%d.%m}" for d in next_reviews(rules.calendar, as_of, n=len(rules.calendar)))
+        "Правило": "Календарь: " + ", ".join(f"{d.day} {MONTH_GEN[d.month]}"
+                                             for d in next_reviews(rules.calendar, as_of, n=len(rules.calendar)))
                    + f" — +{_g(rules.calendar_add)}% NAV в Long IG, если уровни не пройдены",
         "Показатель": "дата", "Порог": "дата пересмотра", "На дату портфеля": f"{as_of:%d.%m.%Y}",
         "Сейчас": f"{today:%d.%m.%Y}", "Касание с даты портфеля": "уровни лестницы пройдены" if levels_reached else "уровни не пройдены",
@@ -268,10 +285,13 @@ def evaluate(snap: Snapshot, market, cfg: dict, today: dt.date | None = None) ->
     if passed and not levels_reached and long_now < (rules.ladder[-1].get("target_after") or 1):
         actions.append({"Приоритет": 1, "Действие": f"Календарный добор: +{_g(rules.calendar_add)}% NAV в Long IG",
                         "Основание": f"пересмотр {passed[-1]:%d.%m.%Y} прошёл, уровни лестницы не пройдены",
-                        "Финансирование": fund_long})
+                        "Финансирование": fund_long,
+                        "data": {"kind": "calendar", "add": rules.calendar_add, "review": passed[-1],
+                                 "sleeve": long_sleeve, "funding_quote": q_long, "funding_alt": over}})
     elif reviews and not actions:
         actions.append({"Приоритет": 3, "Действие": f"Следующий календарный пересмотр — {reviews[0]:%d.%m.%Y}",
-                        "Основание": "уровни правил не пройдены", "Финансирование": "—"})
+                        "Основание": "уровни правил не пройдены", "Финансирование": "—",
+                        "data": {"kind": "next_review", "review": reviews[0]}})
 
     return {"rules": rules, "table": pd.DataFrame(rows), "actions": sorted(actions, key=lambda a: a["Приоритет"]),
             "long_now": long_now, "hy_now": hy_now, "today": today, "next_reviews": reviews}

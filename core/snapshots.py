@@ -53,7 +53,8 @@ def inherit_targets(cur: Snapshot, prev: Snapshot) -> tuple[Snapshot, list]:
         out.dashboard_metrics = copy.deepcopy(prev.dashboard_metrics)
         for m in out.dashboard_metrics.values():
             m["current"] = None                     # текущие значения старого дашборда не переносим
-        notes.append(f"Целевые метрики взяты из портфеля {when}: в новом файле их нет.")
+        notes.append(f"В новом файле нет целевых метрик, поэтому для сравнения с целью использованы цели из "
+                     f"портфеля {when}. Если цели изменились, их нужно уточнить у команды.")
     if (cur.allocation is None or cur.allocation.empty) and prev.allocation is not None and not prev.allocation.empty:
         from .loader import map_sleeves
         a = prev.allocation[["sleeve", "target"]].copy()
@@ -62,11 +63,12 @@ def inherit_targets(cur: Snapshot, prev: Snapshot) -> tuple[Snapshot, list]:
         a["portfolio_sleeve"] = a["sleeve"].map(lambda s: mp[s][0])
         a["match"] = a["sleeve"].map(lambda s: mp[s][1])
         out.allocation = a
-        notes.append(f"Целевая аллокация взята из портфеля {when}: в новом файле её нет.")
+        notes.append(f"В новом файле нет целевой аллокации, поэтому отклонения сегментов считаются от целей "
+                     f"портфеля {when}. Если цели изменились, их нужно уточнить у команды.")
     if not cur.dashboard_texts and not any(cur.sheet_texts.values()) and (prev.dashboard_texts or prev.sheet_texts):
         out.dashboard_texts = list(prev.dashboard_texts)
         out.sheet_texts = dict(prev.sheet_texts)
-        notes.append(f"Правила добора взяты из портфеля {when}.")
+        notes.append(f"В новом файле нет текста стратегии, поэтому правила добора взяты из портфеля {when}.")
     return out, notes
 
 
@@ -151,7 +153,8 @@ def compare(cur: Snapshot, prev: Snapshot, cfg: dict, curve_cur=None, curve_prev
         total = d["Вклад"].sum()
         d.loc[len(d)] = ["Итого изменение портфеля", total]
     if not have_curves:
-        notes.append("Нет кривой UST на одну из дат — изменение YTM не разложено на рынок и спред.")
+        notes.append("На одну из дат нет кривой UST, поэтому изменение YTM портфеля не разложено на вклад "
+                     "ставок и вклад спредов; показано только общее изменение.")
 
     pos = pd.DataFrame({
         "Позиция": [l if isinstance(l, str) else lp for l, lp in zip(m.get("label"), m.get("label_prev"))],

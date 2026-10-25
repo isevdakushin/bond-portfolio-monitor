@@ -79,27 +79,37 @@ def run_checks(snap: Snapshot, cfg: dict) -> pd.DataFrame:
 def _check_date(snap, iss):
     if not snap.as_of:
         iss.add("Ошибка", "Дата портфеля", "Дата портфеля не найдена ни в заголовках листов, ни в имени файла. "
-                "Указать её в блоке «Распознавание файла»: от даты зависят сроки до погашения и кривая UST.")
+                "От неё зависят срок до погашения каждой бумаги, выбор кривой UST для пересчёта G-spread и "
+                "сравнение с рынком, поэтому без даты эти расчёты неточны. Дату нужно указать в блоке "
+                "«Распознавание файла» над вкладками.")
         return
     dates = {d for _, d in snap.as_of_candidates}
     srcs = "; ".join(f"{s}: {dfmt(d)}" for s, d in snap.as_of_candidates)
     if len(dates) > 1:
-        iss.add("Предупреждение", "Дата портфеля", f"Даты в файле расходятся ({srcs}). "
-                f"Взята {dfmt(snap.as_of)}.", field="Дата", file_value=srcs)
+        iss.add("Предупреждение", "Дата портфеля", f"В файле указаны разные даты ({srcs}). Для расчётов "
+                f"взята {dfmt(snap.as_of)}. Если портфель собран на другую дату, её нужно указать в блоке "
+                "«Распознавание файла»: от даты зависят сроки до погашения и кривая UST.",
+                field="Дата", file_value=srcs)
     else:
-        iss.add("Инфо", "Дата портфеля", f"Дата портфеля {dfmt(snap.as_of)} ({srcs}).")
+        iss.add("Инфо", "Дата портфеля", f"Дата портфеля — {dfmt(snap.as_of)} (источник: {srcs}). По ней "
+                "считаются сроки до погашения и выбирается кривая UST.")
 
 
 def _check_weights(p, q, iss):
     s = p["weight"].sum(skipna=True)
     tol_pp = q["weight_sum_tolerance_pp"]
     if abs(s - 1) * 100 > tol_pp:
-        iss.add("Ошибка", "Веса", f"Сумма весов отклоняется от 100% больше чем на {num(tol_pp)} п.п.",
+        iss.add("Ошибка", "Веса", f"Сумма весов позиций равна {pct(s, 3)} и отклоняется от 100% больше чем на "
+                f"{num(tol_pp)} п.п. Из-за этого искажаются средневзвешенные YTM, дюрация и спред портфеля. "
+                "Нужно проверить, все ли позиции попали в файл и нет ли лишних строк, например итоговых.",
                 field="Weight", file_value=pct(s, 3), expected="100%")
     else:
-        iss.add("Инфо", "Веса", f"Сумма весов {pct(s, 3)} — в пределах ±{num(tol_pp)} п.п.")
+        iss.add("Инфо", "Веса", f"Сумма весов позиций — {pct(s, 3)}, в пределах допуска ±{num(tol_pp)} п.п. "
+                "от 100%.")
     for _, r in p[p["weight"] < 0].iterrows():
-        iss.add("Ошибка", "Веса", "Отрицательный вес.", r["label"], "Weight", pct(r["weight"]))
+        iss.add("Ошибка", "Веса", f"Вес позиции отрицательный ({pct(r['weight'])}). В портфеле облигаций без "
+                "коротких позиций это признак ошибки ввода; такой вес занижает средневзвешенные метрики. Вес нужно "
+                "сверить с исходной выгрузкой.", r["label"], "Weight", pct(r["weight"]))
 
 
 REQUIRED_BY_TYPE = {
@@ -122,28 +132,38 @@ def _check_fields(p, iss, present=None):
         empty = [c for c in REQUIRED_BY_TYPE[t] if c in r and (present is None or c in present)
                  and (r[c] is None or pd.isna(r[c]))]
         if empty:
-            iss.add("Ошибка", "Пустые поля", f"Не заполнены обязательные поля ({TYPE_LABEL[t]}).",
-                    r["label"], ", ".join(COLUMN_LABELS[c] for c in empty))
+            names = ", ".join(COLUMN_LABELS[c] for c in empty)
+            iss.add("Ошибка", "Пустые поля", f"У позиции ({TYPE_LABEL[t]}) не заполнены поля, нужные для расчётов: "
+                    f"{names}. Без них позиция выпадает из соответствующих метрик: без YTM — из доходности "
+                    "портфеля, без рейтинга — из кредитного профиля, без дюрации — из процентного риска. Значения "
+                    "нужно запросить у команды или внести через «Поправки аналитика».", r["label"], names)
         expected_empty = [c for c in OPTIONAL_INFO.get(t, []) if (present is None or c in present)
                           and (r[c] is None or pd.isna(r[c]))]
         if expected_empty:
+            names = ", ".join(COLUMN_LABELS[c] for c in expected_empty)
             iss.add("Инфо", "Пустые поля",
-                    f"Не заполнено; для {TYPE_GEN[t]} допустимо. G-spread не пересчитывается.",
-                    r["label"], ", ".join(COLUMN_LABELS[c] for c in expected_empty))
+                    f"Не заполнены поля {names}. Для {TYPE_GEN[t]} это допустимо и на анализ не влияет: G-spread "
+                    "по такой позиции не пересчитывается, в метриках используются значения из файла.",
+                    r["label"], names)
 
 
 def _check_name_vs_columns(p, snap, q, iss):
     for _, r in p.iterrows():
         nm, cm = r["name_maturity"], r["maturity"]
         if nm is not None and not pd.isna(nm) and cm is not None and not pd.isna(cm) and nm != cm:
-            msg = "Погашение в названии бумаги не совпадает с колонкой Maturity."
+            msg = (f"Дата погашения в названии бумаги ({dfmt(nm)}) не совпадает с колонкой Maturity ({dfmt(cm)}). "
+                   "От даты погашения зависят срок до погашения, расчётная дюрация и пересчитанный G-spread, "
+                   "поэтому одну из дат нужно исправить.")
             md_note = _which_date_fits(r, snap, nm, cm)
-            iss.add("Ошибка", "Погашение", msg + (" " + md_note if md_note else ""), r["label"], "Maturity",
-                    dfmt(cm), f"в названии: {dfmt(nm)}")
+            iss.add("Ошибка", "Погашение", msg + (" " + md_note if md_note else "")
+                    + " Предлагаем сверить дату с проспектом выпуска и при необходимости внести поправку.",
+                    r["label"], "Maturity", dfmt(cm), f"в названии: {dfmt(nm)}")
         nc, cc = r["name_coupon"], r["coupon"]
         if nc is not None and cc is not None and not pd.isna(nc) and not pd.isna(cc) \
                 and abs(nc - cc) > q.get("coupon_tolerance", 0.0001):
-            iss.add("Ошибка", "Купон", "Купон в названии бумаги не совпадает с колонкой Coupon.",
+            iss.add("Ошибка", "Купон", f"Купон в названии бумаги ({pct(nc, 3)}) не совпадает с колонкой Coupon "
+                    f"({pct(cc, 3)}). Купон используется в расчёте дюрации, поэтому значение нужно сверить с "
+                    "проспектом выпуска и исправить в файле или через «Поправки аналитика».",
                     r["label"], "Coupon", pct(cc, 3), f"в названии: {pct(nc, 3)}")
 
 
@@ -156,8 +176,8 @@ def _which_date_fits(r, snap, name_date, col_date):
     if md_col is None or md_name is None:
         return ""
     fits = "названия" if abs(md_name - r["mod_duration"]) < abs(md_col - r["mod_duration"]) else "колонки"
-    return (f"Расчётная дюрация: {num(md_col)} по колонке, {num(md_name)} по названию; "
-            f"в файле {num(r['mod_duration'])} — ближе к дате из {fits}.")
+    return (f"Расчётная модифицированная дюрация по дате из колонки — {num(md_col)}, по дате из названия — "
+            f"{num(md_name)}; в файле указана {num(r['mod_duration'])}, это ближе к дате из {fits}.")
 
 
 def _check_ratings(p, iss):
@@ -166,28 +186,41 @@ def _check_ratings(p, iss):
         if rt is None or pd.isna(rt):
             continue
         if ratings.normalize(rt) is None:
-            iss.add("Предупреждение", "Рейтинг", "Рейтинг не распознан (шкала S&P/Fitch или Moody's).", r["label"], "Rating", rt)
+            iss.add("Предупреждение", "Рейтинг", f"Рейтинг «{rt}» не распознан: ожидается шкала S&P/Fitch "
+                    "(например, BBB+) или Moody's (Baa1). Без рейтинга бумага не попадает в средний рейтинг, доли "
+                    "IG и HY и сравнение с пирами. Значение нужно исправить в файле или через «Поправки аналитика».",
+                    r["label"], "Rating", rt)
             continue
         letter, ig = ratings.letter(rt), ratings.is_ig(rt)
         b = ratings.parse_bucket(r["credit_bucket"])
         bucket = r["credit_bucket"] or ""
         if b["grades"] and letter not in b["grades"]:
             iss.add("Ошибка", "Рейтинг / категория",
-                    f"Рейтинг {rt} не соответствует категории «{bucket}» "
-                    f"(в ней: {', '.join(sorted(b['grades']))}).",
+                    f"Рейтинг {rt} не соответствует кредитной категории «{bucket}», в которой указаны ступени "
+                    f"{', '.join(sorted(b['grades']))}. Категория используется в распределении портфеля, а рейтинг — "
+                    "в среднем рейтинге и сигналах по спредам, поэтому расхождение искажает кредитный профиль. "
+                    "Нужно уточнить, что верно — рейтинг или категория.",
                     r["label"], "Credit bucket", bucket, f"ступень {letter}")
         elif b["ig"] and not ig:
-            iss.add("Ошибка", "Рейтинг / категория", f"Категория «{bucket}» — инвестиционный уровень, рейтинг {rt} — HY.",
+            iss.add("Ошибка", "Рейтинг / категория", f"Кредитная категория «{bucket}» относится к инвестиционному "
+                    f"уровню, а рейтинг {rt} — к HY. В расчётах бумага учитывается по рейтингу, то есть как HY, и "
+                    "увеличивает долю HY в портфеле. Категорию или рейтинг нужно привести в соответствие.",
                     r["label"], "Credit bucket", bucket, rt)
         elif b["hy"] and ig and not b["fund"]:
-            iss.add("Ошибка", "Рейтинг / категория", f"Категория «{bucket}» — HY, рейтинг {rt} — инвестиционный уровень.",
+            iss.add("Ошибка", "Рейтинг / категория", f"Кредитная категория «{bucket}» относится к HY, а рейтинг "
+                    f"{rt} — к инвестиционному уровню. В расчётах бумага учитывается по рейтингу, то есть как IG. "
+                    "Категорию или рейтинг нужно привести в соответствие.",
                     r["label"], "Credit bucket", bucket, rt)
         sleeve_tokens = set(re.split(r"[^A-Za-z]+", r["sleeve"] or ""))
         if "IG" in sleeve_tokens and not ig:
-            iss.add("Ошибка", "Рейтинг / sleeve", f"Рейтинг {rt} (HY) в IG-сегменте.",
+            iss.add("Ошибка", "Рейтинг / sleeve", f"Бумага с рейтингом {rt} (HY) находится в IG-сегменте "
+                    f"«{r['sleeve']}». Это противоречит назначению сегмента. Предлагаем проверить, не было ли "
+                    "понижения рейтинга, и решить, оставлять ли позицию в сегменте.",
                     r["label"], "Sleeve", r["sleeve"], rt)
         if "HY" in sleeve_tokens and ig:
-            iss.add("Предупреждение", "Рейтинг / sleeve", f"Рейтинг {rt} (IG) в HY-сегменте.",
+            iss.add("Предупреждение", "Рейтинг / sleeve", f"Бумага с рейтингом {rt} (инвестиционный уровень) "
+                    f"находится в HY-сегменте «{r['sleeve']}». Для HY-сегмента это нетипично; стоит проверить, верно "
+                    "ли указаны рейтинг и сегмент.",
                     r["label"], "Sleeve", r["sleeve"], rt)
 
 
@@ -196,20 +229,29 @@ def _check_ranges(p, snap, q, iss):
         y, g, md, c = r["ytm"], r["gspread"], r["mod_duration"], r["coupon"]
         if pd.notna(y) and not (q["ytm_min"] <= y <= q["ytm_max"]):
             iss.add("Предупреждение", "Аномальные значения",
-                    f"YTM вне диапазона {pct(q['ytm_min'])}–{pct(q['ytm_max'])}.", r["label"], "YTM", pct(y))
+                    f"YTM {pct(y)} вне ожидаемого диапазона {pct(q['ytm_min'])}–{pct(q['ytm_max'])}. Это может "
+                    "быть ошибка ввода, например значение в процентах вместо долей, и оно заметно влияет на "
+                    "доходность портфеля. Значение нужно сверить с источником котировки.", r["label"], "YTM", pct(y))
         if pd.notna(g) and not (q["gspread_min_bp"] <= g <= q["gspread_max_bp"]):
             iss.add("Предупреждение", "Аномальные значения",
-                    f"G-spread вне диапазона {q['gspread_min_bp']}–{q['gspread_max_bp']} бп.",
+                    f"G-spread {num(g, 0)} б.п. вне ожидаемого диапазона {q['gspread_min_bp']}–"
+                    f"{q['gspread_max_bp']} б.п. Значение может быть ошибкой ввода и искажает спред портфеля и "
+                    "сигналы по пирам. Его нужно сверить с источником котировки.",
                     r["label"], "G-spread", num(g, 0))
         if pd.notna(c) and not (0 <= c <= q["coupon_max"]):
-            iss.add("Предупреждение", "Аномальные значения", "Купон вне разумного диапазона.",
+            iss.add("Предупреждение", "Аномальные значения", f"Купон {pct(c)} вне разумного диапазона "
+                    f"0–{pct(q['coupon_max'])}. Значение нужно сверить с проспектом выпуска.",
                     r["label"], "Coupon", pct(c))
         if pd.notna(md) and md <= 0:
-            iss.add("Ошибка", "Аномальные значения", "Дюрация не положительная.", r["label"], "Mod. duration", num(md))
+            iss.add("Ошибка", "Аномальные значения", f"Модифицированная дюрация не положительная ({num(md)}). "
+                    "Для облигации это невозможно; значение искажает дюрацию портфеля и стресс-тест и должно быть "
+                    "исправлено.", r["label"], "Mod. duration", num(md))
         mat = r["maturity"]
         if snap.as_of and mat is not None and not pd.isna(mat):
             if mat <= snap.as_of:
-                iss.add("Ошибка", "Погашение", "Бумага погашена на дату портфеля.",
+                iss.add("Ошибка", "Погашение", f"Дата погашения {dfmt(mat)} не позже даты портфеля "
+                        f"{dfmt(snap.as_of)}: бумага уже погашена или дата указана неверно. Позицию нужно исключить "
+                        "из портфеля или исправить дату погашения.",
                         r["label"], "Maturity", dfmt(mat), f"> {dfmt(snap.as_of)}")
                 continue
             yrs = years_between(snap.as_of, mat)
@@ -217,9 +259,12 @@ def _check_ranges(p, snap, q, iss):
                 excess = md - yrs
                 big = excess > q["duration_over_maturity_error"]
                 iss.add("Ошибка" if big else "Предупреждение", "Дюрация",
-                        f"Дюрация больше срока до погашения на {num(excess)} г. "
-                        + ("Ошибка в дюрации или в дате погашения." if big
-                           else "Скорее всего, округление или дюрация на более раннюю дату."),
+                        f"Модифицированная дюрация ({num(md)}) больше срока до погашения ({num(yrs)} г.) на "
+                        f"{num(excess)} г. "
+                        + ("Для облигации так не бывает, значит, ошибка в дюрации или в дате погашения. Её нужно "
+                           "исправить: от дюрации зависят процентный риск портфеля и стресс-тест." if big
+                           else "Расхождение небольшое: скорее всего, это округление или дюрация, посчитанная на "
+                                "более раннюю дату. На метрики портфеля оно почти не влияет."),
                         r["label"], "Mod. duration", num(md), f"срок до погашения {num(yrs)} г.")
                 continue
             # Сверка дюрации с расчётной (только если даты в названии и колонке не расходятся).
@@ -231,8 +276,10 @@ def _check_ranges(p, snap, q, iss):
                     diff = md - calc
                     if abs(diff) > q["duration_check_abs"] and abs(diff) > q["duration_check_rel"] * calc:
                         iss.add("Предупреждение", "Дюрация",
-                                "Дюрация в файле заметно расходится с расчётной по купону, YTM и погашению. "
-                                "Возможно, посчитана к дате колла — проверить.",
+                                f"Модифицированная дюрация в файле ({num(md)}) заметно расходится с расчётной "
+                                f"по купону, YTM и дате погашения ({num(calc)}). Частая причина — дюрация "
+                                "посчитана к дате колла (досрочного погашения). Предлагаем проверить, есть ли у "
+                                "выпуска колл и к какой дате считается дюрация в файле.",
                                 r["label"], "Mod. duration", num(md), f"расчёт: {num(calc)}")
 
 
@@ -240,10 +287,14 @@ def _check_isin(p, iss):
     for _, r in p.iterrows():
         isin = r["isin"]
         if isin is not None and pd.notna(isin) and not isin_valid(isin):
-            iss.add("Предупреждение", "ISIN", "Неверный формат ISIN или контрольная цифра.", r["label"], "ISIN", isin)
+            iss.add("Предупреждение", "ISIN", f"У ISIN «{isin}» неверный формат или контрольная цифра. По ISIN "
+                    "позиции сопоставляются между портфелями, поэтому из-за ошибки бумага может считаться новой. "
+                    "ISIN нужно сверить с источником.", r["label"], "ISIN", isin)
     dup = p[p["isin"].notna() & p["isin"].duplicated(keep=False)]
     for isin, g in dup.groupby("isin"):
-        iss.add("Ошибка", "ISIN", "Один ISIN в нескольких строках: " + ", ".join(g["label"]),
+        iss.add("Ошибка", "ISIN", "Один и тот же ISIN указан в нескольких строках: " + ", ".join(g["label"])
+                + ". Если это одна бумага, строки нужно объединить, иначе ISIN одной из них неверен. От этого "
+                "зависят концентрация по эмитенту и сравнение портфелей.",
                 field="ISIN", file_value=isin)
 
 
@@ -252,8 +303,9 @@ def _check_countries(p, q, iss):
     for _, r in p.iterrows():
         if r["country"] and norm(r["country"]) in bad:
             iss.add("Предупреждение", "Страна",
-                    "В Country указан регион, а не страна: позиция выпадает "
-                    "из концентрации по странам.", r["label"], "Country", r["country"])
+                    f"В колонке Country указан регион «{r['country']}», а не страна. Поэтому позиция не попадает "
+                    "в концентрацию по странам и лимит по стране для неё не проверяется. Предлагаем указать "
+                    "страну эмитента.", r["label"], "Country", r["country"])
 
 
 def _wsum(p, col):
@@ -269,7 +321,7 @@ def _check_totals(p, snap, tol, fee, iss):
             "gspread": ("Средневзвешенный G-spread, бп", tol["gspread_bp"], lambda x: num(x, 1)),
             "mod_duration": ("Средневзвешенная mod. duration", tol["duration"], lambda x: num(x, 3))}
     corrected = getattr(snap, "corrected_fields", set()) or set()
-    after_fix = " Ожидаемо: итог в файле посчитан до поправок аналитика."
+    after_fix = " Это ожидаемо: итог в файле посчитан до поправок аналитика."
     t = snap.file_totals
     if t:
         for k, (label, tl, f) in spec.items():
@@ -278,13 +330,18 @@ def _check_totals(p, snap, tol, fee, iss):
                 continue
             if abs(v - calc[k]) > tl:
                 if k in corrected:
-                    iss.add("Инфо", "Итоги листа портфеля", f"{label}: итог в файле расходится с расчётом.{after_fix}",
+                    iss.add("Инфо", "Итоги листа портфеля", f"{label}: итог в файле ({f(v)}) расходится с "
+                            f"расчётом по позициям ({f(calc[k])}).{after_fix}",
                             field=f"строка {t['excel_row']}", file_value=f(v), expected=f(calc[k]))
                     continue
-                iss.add("Ошибка", "Итоги листа портфеля", f"{label}: итог в файле не сходится с позициями.",
+                iss.add("Ошибка", "Итоги листа портфеля", f"{label}: итог в файле ({f(v)}) не сходится с "
+                        f"расчётом по позициям ({f(calc[k])}). Значит, итоговая строка посчитана по другим данным "
+                        "или в позициях есть ошибка. В анализе используются значения по позициям; итог в файле "
+                        "стоит пересчитать.",
                         field=f"строка {t['excel_row']}", file_value=f(v), expected=f(calc[k]))
             else:
-                iss.add("Инфо", "Итоги листа портфеля", f"{label}: итог в файле сходится с расчётом ({f(calc[k])}).")
+                iss.add("Инфо", "Итоги листа портфеля", f"{label}: итог в файле сходится с расчётом по позициям "
+                        f"({f(calc[k])}).")
     m = snap.dashboard_metrics
     dash = {"ytm_gross": calc["ytm"], "ytm_net": calc["ytm"] - fee, "mod_duration": calc["mod_duration"],
             "gspread": calc["gspread"]}
@@ -300,15 +357,21 @@ def _check_totals(p, snap, tol, fee, iss):
         if abs(v - calc_v) > dtol[k]:
             src_field = "ytm" if k.startswith("ytm") else k
             if src_field in corrected:
-                iss.add("Инфо", "Дашборд", f"«{m[k]['label']}»: значение на дашборде расходится с расчётом.{after_fix}",
+                iss.add("Инфо", "Дашборд", f"Значение «{m[k]['label']}» на дашборде ({dfmtf[k](v)}) расходится с "
+                        f"расчётом по позициям ({dfmtf[k](calc_v)}).{after_fix}",
                         field=f"00 Dashboard, строка {m[k]['row']}", file_value=dfmtf[k](v), expected=dfmtf[k](calc_v))
                 continue
-            iss.add("Ошибка", "Дашборд", f"«{m[k]['label']}»: значение на дашборде не сходится с позициями.",
+            iss.add("Ошибка", "Дашборд", f"Значение «{m[k]['label']}» на дашборде ({dfmtf[k](v)}) не сходится с "
+                    f"расчётом по позициям ({dfmtf[k](calc_v)}). Вероятно, дашборд не обновлён после изменения "
+                    "позиций; в анализе используются данные по позициям.",
                     field=f"00 Dashboard, строка {m[k]['row']}", file_value=dfmtf[k](v), expected=dfmtf[k](calc_v))
     if m.get("ytm_gross") and m.get("ytm_net") and m["ytm_gross"].get("target") and m["ytm_net"].get("target"):
         implied = m["ytm_gross"]["target"] - m["ytm_net"]["target"]
         if abs(implied - fee) > tol["ytm"]:
-            iss.add("Предупреждение", "Дашборд", "Разница целевых YTM брутто и нетто не равна комиссии.",
+            iss.add("Предупреждение", "Дашборд", f"Разница между целевыми YTM брутто и нетто на дашборде "
+                    f"({pct(implied)}) не равна комиссии ({pct(fee)}). Либо одна из целей указана неверно, либо "
+                    "комиссия по стратегии другая; от этого зависит оценка отставания от цели. Комиссию можно "
+                    "изменить в панели слева.",
                     field="00 Dashboard", file_value=pct(implied), expected=pct(fee))
 
 
@@ -318,34 +381,45 @@ def _check_allocation(p, snap, tol, iss):
         return
     tsum = a["target"].sum(skipna=True)
     if abs(tsum - 1) > tol["weight_pp"] / 100:
-        iss.add("Ошибка", "Аллокация", "Целевая аллокация в сумме не 100%.", field="Target",
+        iss.add("Ошибка", "Аллокация", f"Целевая аллокация на листе Allocation в сумме даёт {pct(tsum)}, а не "
+                "100%. Из-за этого отклонения сегментов от цели считаются неточно; цели нужно уточнить у команды.",
+                field="Target",
                 file_value=pct(tsum), expected="100%")
     by_sleeve = p.groupby("sleeve")["weight"].sum()
     for _, r in a.iterrows():
         if r["match"] == "частичное":
-            iss.add("Инфо", "Аллокация", f"Sleeve «{r['sleeve']}» на листе Allocation сопоставлен с «{r['portfolio_sleeve']}» "
-                    "по началу названия.", r["sleeve"], "Sleeve")
+            iss.add("Инфо", "Аллокация", f"Сегмент «{r['sleeve']}» на листе Allocation сопоставлен с сегментом "
+                    f"портфеля «{r['portfolio_sleeve']}» по началу названия. Если названия сегментов менялись, "
+                    "сопоставление стоит проверить.", r["sleeve"], "Sleeve")
         elif r["match"] in ("не найдено", "неоднозначное"):
-            iss.add("Ошибка", "Аллокация", f"Sleeve «{r['sleeve']}» не сопоставлен с портфелем ({r['match']}).",
+            iss.add("Ошибка", "Аллокация", f"Сегмент «{r['sleeve']}» с листа Allocation не найден среди сегментов "
+                    f"портфеля (сопоставление: {r['match']}). Для него не считается отклонение от цели; нужно "
+                    "проверить написание названия.",
                     r["sleeve"], "Sleeve")
             continue
         calc = by_sleeve.get(r["portfolio_sleeve"], 0.0)
         if r["current"] is not None and pd.notna(r["current"]) and abs(r["current"] - calc) > tol["weight_pp"] / 100:
             if {"weight", "sleeve"} & (getattr(snap, "corrected_fields", set()) or set()):
-                iss.add("Инфо", "Аллокация", "Текущая доля на листе Allocation расходится с весами позиций. "
-                        "Ожидаемо: лист посчитан до поправок аналитика.", r["sleeve"], "Current", pct(r["current"]), pct(calc))
+                iss.add("Инфо", "Аллокация", f"Текущая доля сегмента на листе Allocation ({pct(r['current'])}) "
+                        f"расходится с суммой весов его позиций ({pct(calc)}). Это ожидаемо: лист посчитан до поправок "
+                        "аналитика.", r["sleeve"], "Current", pct(r["current"]), pct(calc))
             else:
-                iss.add("Ошибка", "Аллокация", "Текущая доля на листе Allocation не сходится с весами позиций.",
+                iss.add("Ошибка", "Аллокация", f"Текущая доля сегмента на листе Allocation ({pct(r['current'])}) "
+                        f"не сходится с суммой весов его позиций ({pct(calc)}). В анализе используется сумма по "
+                        "позициям; лист Allocation, вероятно, не обновлён.",
                         r["sleeve"], "Current", pct(r["current"]), pct(calc))
         if r["gap"] is not None and pd.notna(r["gap"]) and r["current"] is not None and pd.notna(r["current"]):
             if abs(r["gap"] - (r["target"] - r["current"])) > 1e-6:
-                iss.add("Предупреждение", "Аллокация", "Gap to target ≠ Target − Current.", r["sleeve"], "Gap",
+                iss.add("Предупреждение", "Аллокация", f"Колонка Gap to target ({pct(r['gap'])}) не равна разнице "
+                        f"Target − Current ({pct(r['target'] - r['current'])}). На анализ это не влияет, отклонение "
+                        "считается заново, но в файле есть внутреннее противоречие.", r["sleeve"], "Gap",
                         pct(r["gap"]), pct(r["target"] - r["current"]))
     mapped = set(a["portfolio_sleeve"].dropna())
     for s in by_sleeve.index:
         if s not in mapped:
-            iss.add("Ошибка", "Аллокация", f"Sleeve «{s}» ({pct(by_sleeve[s])}) нет на листе Allocation — "
-                    "цель не задана.", s, "Sleeve")
+            iss.add("Ошибка", "Аллокация", f"Сегмента «{s}» с долей {pct(by_sleeve[s])} нет на листе Allocation, "
+                    "поэтому цель для него не задана и отклонение не считается. Цель нужно добавить на лист.",
+                    s, "Sleeve")
 
 
 def _check_breakdown(p, snap, tol, iss):
@@ -360,13 +434,14 @@ def _check_breakdown(p, snap, tol, iss):
             if abs(fv - cv) > tol["weight_pp"] / 100:
                 bad.append(f"{name}: {pct(fv)} в файле, {pct(cv)} по позициям")
         if bad and {col, "weight"} & (getattr(snap, "corrected_fields", set()) or set()):
-            iss.add("Инфо", "Breakdown", f"Breakdown по {label} расходится с позициями "
-                    "(ожидаемо: лист посчитан до поправок аналитика): " + "; ".join(bad), field="03 Breakdown")
+            iss.add("Инфо", "Breakdown", f"Разбивка по {label} на листе 03 Breakdown расходится с позициями: "
+                    + "; ".join(bad) + ". Это ожидаемо: лист посчитан до поправок аналитика.", field="03 Breakdown")
         elif bad:
-            iss.add("Ошибка", "Breakdown", f"Breakdown по {label} не сходится с позициями: "
-                    + "; ".join(bad), field="03 Breakdown")
+            iss.add("Ошибка", "Breakdown", f"Разбивка по {label} на листе 03 Breakdown не сходится с позициями: "
+                    + "; ".join(bad) + ". В анализе используются веса позиций; лист, вероятно, не обновлён.",
+                    field="03 Breakdown")
         else:
-            iss.add("Инфо", "Breakdown", f"Breakdown по {label} сходится с позициями.")
+            iss.add("Инфо", "Breakdown", f"Разбивка по {label} на листе 03 Breakdown сходится с позициями.")
 
 
 def _hy_weight(p):
@@ -398,10 +473,13 @@ def _check_dashboard_claims(p, snap, tol, iss):
             checks.append(("EM всего (Region = EM)", nums[0], em))
         for what, stated, calc in checks:
             if abs(stated - calc) > tol["weight_pp"] / 100:
-                iss.add("Ошибка", "Дашборд", f"Цифра на дашборде не сходится с позициями: {what}.",
+                iss.add("Ошибка", "Дашборд", f"Цифра на дашборде не сходится с позициями: {what} — "
+                        f"{pct(stated, 1)} в тексте дашборда и {pct(calc, 1)} по позициям. Текст дашборда, вероятно, "
+                        "не обновлён; в анализе используются данные по позициям.",
                         field=f"00 Dashboard, строка {c['row']}", file_value=pct(stated, 1), expected=pct(calc, 1))
             else:
-                iss.add("Инфо", "Дашборд", f"«{c['label']}» подтверждается: {what} = {pct(calc, 1)}.")
+                iss.add("Инфо", "Дашборд", f"Цифра на дашборде «{c['label']}» подтверждается расчётом: "
+                        f"{what} = {pct(calc, 1)}.")
 
 
 def _check_dashboard_text(snap, iss):
@@ -421,8 +499,10 @@ def _check_dashboard_text(snap, iss):
                 lo, hi = float(lo.replace(",", ".")), float(hi.replace(",", "."))
                 if not (lo - 0.05 <= target <= hi + 0.05):
                     iss.add("Предупреждение", "Дашборд",
-                            f"Целевая дюрация в таблице ({num(target)}) вне диапазона из текста "
-                            f"дашборда ({num(lo, 1)}–{num(hi, 1)}): «{sent.strip().rstrip('.')}».",
+                            f"Целевая дюрация в таблице дашборда ({num(target)}) не попадает в диапазон из "
+                            f"текста дашборда ({num(lo, 1)}–{num(hi, 1)}): «{sent.strip().rstrip('.')}». От того, "
+                            "какая цель верна, зависит вывод о том, нужно ли удлинять портфель. Предлагаем уточнить "
+                            "целевую дюрацию у команды; пока для сравнения используется значение из таблицы.",
                             field="00 Dashboard", file_value=num(target), expected=f"{num(lo, 1)}–{num(hi, 1)}")
 
 

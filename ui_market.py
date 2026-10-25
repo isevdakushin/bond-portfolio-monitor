@@ -5,6 +5,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from core import narrative as N
 from core.market import SOURCE_HY, SOURCE_UST, Market, check_file_claims
 
 C1, C2 = "#2a78d6", "#eb6834"
@@ -43,8 +44,12 @@ def _source_line(label, url, obs_date, fetched_at, how, extra=""):
 def render(m: Market, dashboard_texts):
     if m.errors:
         for e in m.errors:
-            st.warning(e + " Значение не показано.")
+            st.warning(e.rstrip(".") + ". Показатели, которые зависят от этих данных, не рассчитаны: значения "
+                       "не подставляются.")
     ca, cl = m.curve_asof, m.curve_latest
+    txt = N.market(m)
+    if txt:
+        st.markdown(txt)
 
     st.subheader("Ключевые уровни")
     k = st.columns(4)
@@ -62,8 +67,8 @@ def render(m: Market, dashboard_texts):
     st.markdown("**Источники**")
     if ca:
         _source_line(SOURCE_UST, ca.url, ca.date, ca.fetched_at, ca.how,
-                     "" if ca.date == ca.requested else f" · на {_d(ca.requested)} данных нет (выходной) — "
-                                                          "взят предыдущий рабочий день")
+                     "" if ca.date == ca.requested else f" · на {_d(ca.requested)} данных нет (выходной или "
+                                                          "праздник), поэтому взят предыдущий рабочий день")
     if cl and cl.date != (ca.date if ca else None):
         _source_line(SOURCE_UST + " (последняя)", cl.url, cl.date, cl.fetched_at, cl.how)
     if m.hy_meta:
@@ -78,8 +83,8 @@ def render(m: Market, dashboard_texts):
                  "Расхождение": f"{c['diff_bp']:+.0f} бп", "Статус": "совпадает" if c["ok"] else "расходится"}
                 for c in claims]
         st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-        st.caption("Допуск 1 бп. Расхождение обычно значит, что в файле уровень на другое время дня "
-                   "(Treasury публикует закрытие).")
+        st.caption("Допуск — 1 б.п. Если цифра в файле расходится с официальной, скорее всего, в файле указан "
+                   "уровень на другое время дня: Treasury публикует доходности на закрытие.")
 
     if ca:
         st.subheader("Кривая доходности UST (par yield)")
@@ -113,9 +118,10 @@ def render(m: Market, dashboard_texts):
             if m.as_of:
                 fig.add_vline(x=m.as_of, line=dict(color="#898781", width=1, dash="dot"))
             st.plotly_chart(_layout(fig, 300), width="stretch", theme="streamlit")
-            st.caption(f"Пунктир — дата портфеля. Период {_d(s.index.min())}–{_d(s.index.max())}. "
-                       f"Максимум: {s.max() * 100:.2f}% ({_d(s.idxmax())}); "
-                       f"минимум: {s.min() * 100:.2f}% ({_d(s.idxmin())}).")
+            lo, hi = (f"{v * 100:.2f}".replace(".", ",") for v in (s.min(), s.max()))
+            st.caption(f"Вертикальная пунктирная линия — дата портфеля. С {_d(s.index.min())} по "
+                       f"{_d(s.index.max())} доходность менялась от {lo}% ({_d(s.idxmin())}) до "
+                       f"{hi}% ({_d(s.idxmax())}).")
     if m.hy_series is not None and not m.hy_series.empty:
         with c2:
             st.subheader("HY OAS, бп")
@@ -127,6 +133,6 @@ def render(m: Market, dashboard_texts):
             if m.as_of:
                 fig.add_vline(x=m.as_of, line=dict(color="#898781", width=1, dash="dot"))
             st.plotly_chart(_layout(fig, 300, yfmt=""), width="stretch", theme="streamlit")
-            st.caption(f"Пунктир — дата портфеля. Период {_d(s.index.min())}–{_d(s.index.max())}. "
-                       f"Максимум: {s.max():.0f} бп ({_d(s.idxmax())}); "
-                       f"минимум: {s.min():.0f} бп ({_d(s.idxmin())}).")
+            st.caption(f"Вертикальная пунктирная линия — дата портфеля. С {_d(s.index.min())} по "
+                       f"{_d(s.index.max())} спред менялся от {s.min():.0f} б.п. ({_d(s.idxmin())}) до "
+                       f"{s.max():.0f} б.п. ({_d(s.idxmax())}).")

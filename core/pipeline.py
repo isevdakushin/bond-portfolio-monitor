@@ -83,7 +83,7 @@ def run(snap: Snapshot, cfg: dict, prev: Snapshot | None = None, fred_key: str |
         try:
             r.estimate = estimate(snap, cfg, fred_key, r.market.curve_asof, r.market.curve_latest, today=r.today)
         except Exception as e:  # noqa: BLE001 — оценка необязательна; причина показывается
-            r.notes.append(f"Оценка на текущую дату недоступна: {e}")
+            r.notes.append(f"Оценку на текущую дату построить не удалось: {e}")
     if prev is not None:
         r.spread_changes = spread_changes(snap, prev, cfg)
         r.comparison = compare(snap, prev, cfg, r.market.curve_asof if r.market else None,

@@ -53,21 +53,21 @@ def parse_value(field: str, raw):
     """Значение из ввода аналитика -> внутренний формат. Проценты: «4,5», «4.5%» или 0.045."""
     kind = FIELDS[field][1]
     if raw is None or (isinstance(raw, str) and not raw.strip()):
-        raise CorrectionError("Пустое значение.")
+        raise CorrectionError("Новое значение не указано.")
     if kind == "date":
         d = raw if isinstance(raw, dt.date) else to_date(raw)
         if d is None:
-            raise CorrectionError(f"Не распознана дата: «{raw}». Формат: ДД.ММ.ГГГГ.")
+            raise CorrectionError(f"Дата «{raw}» не распознана. Дату нужно указать в формате ДД.ММ.ГГГГ.")
         return d
     if kind in ("pct", "num"):
         x = raw if isinstance(raw, (int, float)) else to_float(raw)
         if x is None:
-            raise CorrectionError(f"Не распознано число: «{raw}».")
+            raise CorrectionError(f"Число «{raw}» не распознано. Проценты указываются числом, например 4,5.")
         return x / 100 if kind == "pct" and abs(x) > 1 else float(x)
     if kind == "rating":
         r = ratings.normalize(raw)
         if r is None:
-            raise CorrectionError(f"Рейтинг «{raw}» не распознан (S&P/Fitch или Moody's).")
+            raise CorrectionError(f"Рейтинг «{raw}» не распознан. Подходят шкалы S&P/Fitch (BBB+) и Moody's (Baa1).")
         return r
     return str(raw).strip()
 
@@ -104,12 +104,13 @@ def _same(field, a, b) -> bool:
 def make(snap: Snapshot, label: str, field: str, new_raw, reason: str, author: str = "аналитик") -> dict:
     """Новая поправка для позиции (по подписи «#5 Targa…») с проверкой значения и основания."""
     if field not in FIELDS:
-        raise CorrectionError(f"Поле «{field}» нельзя исправлять.")
+        raise CorrectionError(f"Поле «{field}» не исправляется через поправки аналитика.")
     if not reason or not reason.strip():
-        raise CorrectionError("Не указано основание.")
+        raise CorrectionError("Не указано основание. Каждая поправка попадает в журнал отчёта, поэтому основание "
+                              "обязательно.")
     rows = snap.positions[snap.positions["label"] == label]
     if rows.empty:
-        raise CorrectionError(f"Позиции «{label}» нет.")
+        raise CorrectionError(f"Позиции «{label}» нет в портфеле.")
     r = rows.iloc[0]
     new = parse_value(field, new_raw)
     old = r[field]
@@ -118,7 +119,7 @@ def make(snap: Snapshot, label: str, field: str, new_raw, reason: str, author: s
     if isinstance(old, (int, float)):
         old = float(old)
     if _same(field, old, new):
-        raise CorrectionError("Новое значение совпадает с текущим.")
+        raise CorrectionError("Новое значение совпадает с текущим, поправка не нужна.")
     return {"key": pos_key(r), "label": label, "field": field, "old": _to_json(field, old),
             "new": _to_json(field, new), "reason": reason.strip(), "author": author,
             "created": dt.date.today().isoformat()}
@@ -171,19 +172,19 @@ def suggest(snap: Snapshot) -> list[dict]:
         mat, nm = r["maturity"], r.get("name_maturity")
         if r["instrument_type"] == "bond" and nm is not None and not pd.isna(nm) and mat is not None \
                 and not pd.isna(mat) and nm != mat:
-            reason = f"погашение по названию бумаги ({nm:%d.%m.%Y})"
+            reason = f"Дата погашения взята из названия бумаги ({nm:%d.%m.%Y})"
             if snap.as_of and pd.notna(r["mod_duration"]):
                 md_n = modified_duration(snap.as_of, nm, r["coupon"], r["ytm"])
                 md_c = modified_duration(snap.as_of, mat, r["coupon"], r["ytm"])
                 if md_n and md_c:
-                    reason += (f"; расчётная дюрация по ней {md_n:.2f}, по колонке {md_c:.2f}, в файле "
-                               f"{r['mod_duration']:.2f}").replace(".", ",")
+                    reason += (f": расчётная дюрация по ней — {md_n:.2f}, по дате из колонки — {md_c:.2f}, "
+                               f"в файле — {r['mod_duration']:.2f}").replace(".", ",")
                     if abs(md_c - r["mod_duration"]) < abs(md_n - r["mod_duration"]):
-                        reason += " — дюрация ближе к дате из колонки, проверить"
-            out.append({"label": lab, "field": "maturity", "new": nm, "reason": reason})
+                        reason += ". Дюрация в файле ближе к дате из колонки, поэтому поправку нужно проверить"
+            out.append({"label": lab, "field": "maturity", "new": nm, "reason": reason + "."})
         nc, cc = r.get("name_coupon"), r["coupon"]
         if nc is not None and cc is not None and not pd.isna(nc) and not pd.isna(cc) and abs(nc - cc) > 1e-4:
-            out.append({"label": lab, "field": "coupon", "new": nc, "reason": "купон по названию бумаги"})
+            out.append({"label": lab, "field": "coupon", "new": nc, "reason": "Купон взят из названия бумаги."})
         rt, bucket = r["rating"], r.get("credit_bucket")
         if ratings.normalize(rt) and isinstance(bucket, str):
             b = ratings.parse_bucket(bucket)
@@ -192,14 +193,15 @@ def suggest(snap: Snapshot) -> list[dict]:
                 new_b = re.sub(r"\b(AAA|AA|A|BBB|BB|B|CCC)\b", letter, bucket, count=1)
                 if new_b != bucket:
                     out.append({"label": lab, "field": "credit_bucket", "new": new_b,
-                                "reason": f"категория по рейтингу {rt} (если неверен рейтинг — исправить его)"})
+                                "reason": f"Категория приведена в соответствие с рейтингом {rt}. Если неверен "
+                                          "сам рейтинг, исправлять нужно его."})
         if snap.as_of and r["instrument_type"] == "bond" and mat is not None and not pd.isna(mat) \
                 and pd.notna(r["mod_duration"]) and mat > snap.as_of and r["mod_duration"] > years_between(snap.as_of, mat) + 0.01:
             md = modified_duration(snap.as_of, mat, r["coupon"], r["ytm"])
             if md:
                 out.append({"label": lab, "field": "mod_duration", "new": round(md, 2),
-                            "reason": "дюрация в файле больше срока до погашения; расчётная по купону, "
-                                      "YTM и погашению (без учёта опционов)"})
+                            "reason": "Дюрация в файле больше срока до погашения. Предложена расчётная "
+                                      "дюрация по купону, YTM и дате погашения (без учёта опционов)."})
     return out
 
 
@@ -210,7 +212,7 @@ def to_json(corrections: list[dict]) -> str:
 def from_json(text: str) -> list[dict]:
     data = json.loads(text)
     if not isinstance(data, list) or not all(isinstance(c, dict) and {"key", "field", "new"} <= set(c) for c in data):
-        raise CorrectionError("Файл поправок повреждён или другого формата.")
+        raise CorrectionError("Файл поправок не прочитан: он повреждён или сохранён не этим инструментом.")
     for c in data:
         if c["field"] not in FIELDS:
             raise CorrectionError(f"Неизвестное поле в файле поправок: {c['field']}")

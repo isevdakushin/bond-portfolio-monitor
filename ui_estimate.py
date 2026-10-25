@@ -5,6 +5,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from core import narrative as N
 from core.estimate import Estimate
 from core.stress import run_scenario
 
@@ -18,11 +19,14 @@ def _d(d):
 def render_estimate(e: Estimate | None, errors: list):
     st.subheader("Оценка портфеля на последнюю рыночную дату")
     if e is None:
-        st.warning("Оценки нет: нет кривой UST или индексов FRED. " + " ".join(errors))
+        st.warning("Оценку построить не удалось: нет кривой UST или индексов FRED на последнюю дату. "
+                   + " ".join(errors))
         return
     p = e.portfolio
-    st.caption(f"С даты портфеля {_d(e.as_of)} по {_d(e.est_date)} ({p['days']} дн.). ΔYTM бумаги ≈ ΔUST на её срок "
-               "(Treasury) + ΔOAS её индекса ICE BofA (FRED). **Оценка по индексам, не котировки бумаг.**")
+    st.markdown(N.estimate(e))
+    st.caption(f"Период — с {_d(e.as_of)} по {_d(e.est_date)}. Изменение доходности каждой бумаги оценено как "
+               "изменение доходности UST на её срок (Treasury) плюс изменение OAS её индекса ICE BofA (FRED); "
+               "изменение цены — через модифицированную дюрацию, к нему добавлен купонный доход за период.")
     k = st.columns(4)
     k[0].metric("YTM (оценка)", f"{p['ytm_est'] * 100:.2f}%", f"{(p['ytm_est'] - p['ytm_file']) * 1e4:+.0f} бп к файлу",
                 delta_color="off")
@@ -31,7 +35,8 @@ def render_estimate(e: Estimate | None, errors: list):
     k[2].metric("Ценовой эффект + купон", f"{p['total'] * 100:+.2f}%",
                 f"цена {p['price'] * 100:+.2f}%, купон {p['carry'] * 100:+.2f}%", delta_color="off")
     k[3].metric("Вклад: UST / спреды", f"{round(p['d_ust_bp']) + 0:+d} / {round(p['d_oas_bp']) + 0:+d} бп",
-                help="Средневзвешенное изменение UST на сроки бумаг и OAS их индексов.")
+                help="Средневзвешенное изменение доходности UST на сроки бумаг и OAS их индексов: показывает, "
+                     "что больше повлияло на оценку — ставки или спреды.")
     st.markdown("**Индексы и изменения спредов**")
     idx = e.indices.copy()
     st.dataframe(idx, hide_index=True, width="stretch", column_config={
@@ -57,10 +62,14 @@ def render_estimate(e: Estimate | None, errors: list):
 
 def render_stress(snap, stress: dict):
     st.subheader("Стресс-тест: мгновенный шок ставок и спредов")
-    st.caption("P&L позиции ≈ −mod. duration × (ΔUST + Δспреда). Шок EM — Region = EM, HY — рейтинг ниже BBB−; "
-               "для бумаги EM и HY — больший из шоков. Кэш и T-bills — только ΔUST. Без выпуклости.")
+    st.markdown(N.stress(stress))
+    st.caption("P&L позиции ≈ −модифицированная дюрация × (изменение UST + изменение спреда). Шок EM применяется "
+               "к позициям с регионом EM, шок HY — к бумагам с рейтингом ниже BBB−; если бумага относится к обоим, "
+               "берётся больший шок. Денежные позиции и T-bills реагируют только на ставки. Выпуклость не "
+               "учитывается, поэтому при больших шоках оценка потерь немного завышена.")
     nav = st.number_input("NAV портфеля, $ млн (для P&L в долларах)", 0.0, 100000.0, 0.0, 0.1,
-                          help="В файле компании NAV нет. При 0 P&L показывается только в процентах.")
+                          help="В файле компании NAV не указан. Если оставить 0, P&L показывается только в "
+                               "процентах NAV.")
     s = stress["summary"].copy()
     fig = go.Figure()
     fig.add_bar(y=s["Сценарий"], x=s["P&L портфеля, % NAV"] * 100, orientation="h",
@@ -84,6 +93,7 @@ def render_stress(snap, stress: dict):
         "P&L, $ млн": st.column_config.NumberColumn(format="%+.2f")})
 
     st.markdown("**Свой сценарий**")
+    st.caption("Шоки задаются в базисных пунктах; результат пересчитывается сразу и показан по сегментам.")
     c = st.columns(4)
     sc = {"name": "свой", "ust": c[0].number_input("UST, бп", -500, 500, 50, 10),
           "em": c[1].number_input("Спреды EM, бп", -500, 1000, 50, 10),

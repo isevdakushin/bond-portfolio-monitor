@@ -227,7 +227,8 @@ def read_grids(data: bytes, name: str):
             raise
         except Exception:  # noqa: BLE001 — пробуем следующий формат
             continue
-    raise LoadError("Файл не читается. Поддерживаются .xlsx, .xlsm, .xls и .csv.")
+    raise LoadError("Файл не удалось прочитать. Инструмент принимает файлы Excel (.xlsx, .xlsm, .xls) и CSV; "
+                    "если файл в одном из этих форматов, стоит открыть его в Excel и сохранить заново.")
 
 
 def _read_xlsx(data, notes):
@@ -254,8 +255,9 @@ def _read_xlsx(data, notes):
                     missing += 1
     if missing:
         notes.append({"severity": "Предупреждение", "category": "Структура",
-                      "message": f"{missing} формул без сохранённых значений — эти ячейки читаются пустыми. "
-                                 "Открыть файл в Excel и сохранить, чтобы формулы пересчитались."})
+                      "message": f"В файле {missing} формул без сохранённых значений, поэтому эти ячейки "
+                                 "читаются как пустые и могут выпасть из расчётов. Файл нужно открыть в Excel и "
+                                 "сохранить, чтобы формулы пересчитались, и загрузить заново."})
     return grids
 
 
@@ -277,7 +279,8 @@ def _read_xls(data, notes):
                     row.append(cell.value)
             rows.append(row)
         grids[sh.name] = rows
-    notes.append({"severity": "Инфо", "category": "Структура", "message": "Формат файла — .xls."})
+    notes.append({"severity": "Инфо", "category": "Структура",
+                  "message": "Файл в старом формате Excel (.xls); он прочитан так же, как .xlsx."})
     return grids
 
 
@@ -296,8 +299,9 @@ def _read_csv(data, notes):
         delim = ";" if sample.count(";") > sample.count(",") else ","
     rows = [[c if c.strip() != "" else None for c in r] for r in csv.reader(io.StringIO(text), delimiter=delim)]
     notes.append({"severity": "Инфо", "category": "Структура",
-                  "message": f"Формат файла — CSV (разделитель «{delim}»). Лист один: целей и аллокации "
-                             "в файле нет."})
+                  "message": f"Файл в формате CSV (разделитель «{delim}»). В CSV только одна таблица, поэтому "
+                             "целевых метрик и целевой аллокации в нём нет и сравнение с целями не выполняется. "
+                             "Для полного анализа нужен Excel с листами дашборда и аллокации."})
     return {"CSV": rows}
 
 
@@ -439,29 +443,37 @@ def _parse_portfolio(grid, sheet, overrides, notes):
 
     missing = [" или ".join(COLUMN_LABELS[k] for k in alt) for alt in ESSENTIAL if not any(k in colmap for k in alt)]
     if missing:
-        raise LoadError(f"На листе «{sheet}» нет обязательных колонок: {'; '.join(missing)}. "
-                        "Указать вручную в блоке «Распознавание файла».",
+        raise LoadError(f"На листе «{sheet}» не найдены обязательные колонки: {'; '.join(missing)}. Без них "
+                        "портфель нельзя проанализировать. Если колонки есть, но названы иначе, их нужно указать "
+                        "вручную в блоке «Распознавание файла».",
                         detected={"sheet": sheet, "header_row": header_rows[0], "labels": [l for l in labels if l],
                                   "columns": {k: labels[c] for k, c in colmap.items()}})
     for k in IMPORTANT:
         if k not in colmap:
             notes.append({"severity": "Предупреждение", "category": "Структура",
-                          "message": f"Нет колонки «{COLUMN_LABELS[k]}» — связанные расчёты пропущены "
-                                     "(можно указать вручную в блоке «Распознавание файла»)."})
+                          "message": f"В файле не найдена колонка «{COLUMN_LABELS[k]}», поэтому расчёты, которые "
+                                     "от неё зависят, пропущены. Если колонка есть под другим названием, её можно "
+                                     "указать вручную в блоке «Распознавание файла»."})
     if h["two"]:
         notes.append({"severity": "Инфо", "category": "Структура",
-                      "message": f"Двухстрочный заголовок (строки {header_rows[0]}–{header_rows[1]})."})
+                      "message": f"Заголовок таблицы занимает две строки ({header_rows[0]}–{header_rows[1]}); "
+                                 "названия колонок собраны из обеих."})
     if "gspread" in colmap and norm(labels[colmap["gspread"]]) in ("spread", "спред"):
         notes.append({"severity": "Предупреждение", "category": "Структура",
-                      "message": f"Тип спреда в колонке «{labels[colmap['gspread']]}» не указан — принят как G-spread."})
+                      "message": f"В колонке «{labels[colmap['gspread']]}» не указан тип спреда, и она принята "
+                                 "как G-spread (спред к UST). Если это Z-spread или OAS, сравнение с пересчётом "
+                                 "по кривой Treasury будет некорректным; тип спреда стоит уточнить у команды."})
     ytm_label = norm(labels[colmap["ytm"]])
     if "ytw" in ytm_label or "worst" in ytm_label:
         notes.append({"severity": "Предупреждение", "category": "Структура",
-                      "message": f"Колонка «{labels[colmap['ytm']]}» — YTW; используется как YTM."})
+                      "message": f"Колонка «{labels[colmap['ytm']]}» содержит доходность к худшему сценарию "
+                                 "(YTW), и она используется вместо YTM. Для бумаг с коллом YTW может быть ниже YTM, "
+                                 "поэтому доходность портфеля получится консервативной."})
     if len(rating_cols) > 1:
         notes.append({"severity": "Инфо", "category": "Структура",
                       "message": "Несколько колонок рейтинга (" + ", ".join(labels[c] for c in rating_cols) +
-                                 ") — взят составной рейтинг: из трёх средний, из двух худший."})
+                                 "). Используется составной рейтинг по правилу индексов: из трёх рейтингов — "
+                                 "средний, из двух — худший."})
 
     def get(row, key):
         c = colmap.get(key)
@@ -510,19 +522,23 @@ def _parse_portfolio(grid, sheet, overrides, notes):
             "credit_bucket": to_str(get(row, "credit_bucket")), "min_piece": to_float(get(row, "min_piece")),
         })
     if not rows:
-        raise LoadError(f"На листе «{sheet}» под заголовками нет ни одной позиции.")
+        raise LoadError(f"На листе «{sheet}» под заголовками не найдено ни одной позиции. Нужно проверить, "
+                        "что выбран лист с портфелем и верно определена строка заголовков (блок «Распознавание "
+                        "файла»).")
     df = pd.DataFrame(rows)
     if "sleeve" not in colmap and df["sleeve"].notna().any():
         notes.append({"severity": "Инфо", "category": "Структура",
-                      "message": "Колонки Sleeve нет — сегменты взяты из строк-разделов."})
+                      "message": "Колонки Sleeve в файле нет, поэтому сегменты портфеля определены по "
+                                 "строкам-разделам таблицы."})
 
     df, total = _normalize_units(df, totals, notes)
     notes.append({"severity": "Инфо", "category": "Структура",
-                  "message": f"Лист «{sheet}», заголовки в строке {header_rows[0]}, позиций: {len(df)}."})
+                  "message": f"Позиции прочитаны с листа «{sheet}» (заголовки в строке {header_rows[0]}), "
+                             f"всего {len(df)}."})
     if total:
         notes.append({"severity": "Инфо", "category": "Структура",
-                      "message": f"Строка итогов ({total['excel_row']}) не считается позицией, "
-                                 "используется для сверки."})
+                      "message": f"Строка {total['excel_row']} распознана как итоговая: она не считается "
+                                 "позицией и используется для сверки итогов с расчётом."})
 
     df["name_coupon"] = df["issuer"].map(parse_name_coupon)
     df["name_maturity"] = df["issuer"].map(parse_name_maturity)
@@ -548,14 +564,16 @@ def _normalize_units(df, totals, notes):
         total_mv = df["market_value"].sum()
         df["weight"] = df["market_value"] / total_mv
         notes.append({"severity": "Инфо", "category": "Единицы",
-                      "message": f"Колонки весов нет — веса посчитаны по рыночной стоимости (итого {total_mv:,.0f})."})
+                      "message": "Колонки с весами в файле нет, поэтому веса посчитаны как доля рыночной "
+                                 f"стоимости позиции в общей стоимости портфеля ({total_mv:,.0f}).".replace(",", " ")})
         for t in totals:
             t["weight"] = t["market_value"] / total_mv if t.get("market_value") else None
     wsum = df["weight"].sum(skipna=True)
     w_scale = 100 if 50 < wsum < 150 else 1
     if w_scale == 100:
         df["weight"] /= 100
-        notes.append({"severity": "Инфо", "category": "Единицы", "message": "Веса в процентах — переведены в доли."})
+        notes.append({"severity": "Инфо", "category": "Единицы",
+                      "message": "Веса в файле указаны в процентах и для расчётов переведены в доли."})
     y_scale = 1
     for col in ("ytm", "coupon"):
         med = df[col].median(skipna=True)
@@ -564,18 +582,21 @@ def _normalize_units(df, totals, notes):
             if col == "ytm":
                 y_scale = 100
             notes.append({"severity": "Инфо", "category": "Единицы",
-                          "message": f"{COLUMN_LABELS[col]} в процентах — переведено в доли."})
+                          "message": f"{COLUMN_LABELS[col]} в файле указаны в процентах и для расчётов "
+                                     "переведены в доли."})
     g_scale = 1
     med = df["gspread"].median(skipna=True)
     if pd.notna(med) and med != 0:
         if abs(med) < 0.1:
             g_scale = 10000
             notes.append({"severity": "Инфо", "category": "Единицы",
-                          "message": "G-spread в долях — переведён в бп."})
+                          "message": "G-spread в файле указан в долях и для расчётов переведён в базисные "
+                                     "пункты."})
         elif abs(med) < 15:
             g_scale = 100
             notes.append({"severity": "Инфо", "category": "Единицы",
-                          "message": "G-spread в процентах — переведён в бп."})
+                          "message": "G-spread в файле указан в процентах и для расчётов переведён в "
+                                     "базисные пункты."})
         df["gspread"] *= g_scale
 
     # Строка итогов: та, чей вес равен сумме весов позиций (промежуточные итоги разделов отбрасываются).
@@ -794,7 +815,9 @@ def load_snapshot(source, name: str | None = None, overrides: dict | None = None
             port = kw if kw and scores[kw] == max(scores.values()) else max(scores, key=scores.get)
             if kw != port and scores[port] >= 100:
                 notes.append({"severity": "Инфо", "category": "Структура",
-                              "message": f"Лист с позициями найден по содержимому: «{port}»."})
+                              "message": f"Лист с позициями определён по содержимому, а не по названию: "
+                                         f"«{port}». Если выбран не тот лист, его можно указать в блоке "
+                                         "«Распознавание файла»."})
 
     try:
         positions, totals, detected = _parse_portfolio(grids[port], port, overrides, notes)
@@ -821,10 +844,14 @@ def load_snapshot(source, name: str | None = None, overrides: dict | None = None
     sheets["breakdown"], breakdown = pick("breakdown", _parse_breakdown, lambda x: any(x.values()))
     if sheets["dashboard"] is None:
         notes.append({"severity": "Предупреждение", "category": "Структура",
-                      "message": "Целевых метрик нет (таблица «Текущий / Целевой») — сравнение с целью пропущено."})
+                      "message": "В файле не найдена таблица целевых метрик («Текущий / Целевой»), поэтому "
+                                 "сравнение YTM, дюрации и спреда с целями не выполняется. Если загружен прошлый "
+                                 "портфель, цели будут взяты из него."})
     if sheets["allocation"] is None:
         notes.append({"severity": "Предупреждение", "category": "Структура",
-                      "message": "Целевой аллокации нет (таблица Sleeve / Target) — отклонения от цели не считаются."})
+                      "message": "В файле не найдена целевая аллокация (таблица Sleeve / Target), поэтому "
+                                 "отклонения сегментов от цели не считаются. Если загружен прошлый портфель, "
+                                 "аллокация будет взята из него."})
 
     if allocation is not None and not allocation.empty:
         mapping = map_sleeves(allocation["sleeve"], positions["sleeve"])

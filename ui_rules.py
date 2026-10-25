@@ -6,11 +6,13 @@ import datetime as dt
 import plotly.graph_objects as go
 import streamlit as st
 
+from core import narrative as N
+
 C1 = "#2a78d6"
 ZONE = "rgba(235,104,52,0.15)"
 LINE = "#eb6834"
 STATUS_BG = {"сработало сейчас": "#fde2d6", "уровень достигался, сейчас ниже": "#fff3cd"}
-PRIORITY = {1: "по правилу", 2: "на проверку", 3: "к сведению"}
+PRIORITY = {1: "Действие по правилу стратегии", 2: "Требует проверки", 3: "К сведению"}
 
 
 def _chart(series, as_of, height, ysuffix, hover):
@@ -27,16 +29,17 @@ def _chart(series, as_of, height, ysuffix, hover):
 
 def render(ev: dict, market, as_of):
     rules = ev["rules"]
-    st.caption("Правила — из файла компании (цитаты ниже), уровни — Treasury и FRED. Шаг лестницы считается "
-               "достигнутым, если 10Y UST не ниже нижней границы зоны. **Решение — за аналитиком.**")
+    st.caption("Правила добора взяты из текста стратегии в файле компании (цитаты — в блоке «Откуда взяты "
+               "правила»), а рыночные уровни — из официальных данных U.S. Treasury и FRED. Шаг лестницы считается "
+               "достигнутым, если доходность 10-летних UST не ниже нижней границы зоны. **Решение остаётся за "
+               "аналитиком.**")
 
     st.subheader("Действия по стратегии компании")
     if not ev["actions"]:
-        st.success("По правилам дашборда действий нет.")
+        st.success("По правилам стратегии действий сейчас не требуется.")
     for a in ev["actions"]:
         box = st.error if a["Приоритет"] == 1 else st.warning if a["Приоритет"] == 2 else st.info
-        box(f"**{a['Действие']}** · {PRIORITY[a['Приоритет']]}  \nОснование: {a['Основание']}.  \n"
-            f"Финансирование — {a['Финансирование']}.")
+        box(f"**{PRIORITY[a['Приоритет']]}.** {N.action(a)}")
 
     st.subheader("Статус правил")
     t = ev["table"].drop(columns=["Источник правила"])
@@ -77,4 +80,5 @@ def render(ev: dict, market, as_of):
                           annotation_text=f"триггер {rules.hy_trigger_bp:.0f} бп", annotation_position="top left",
                           annotation_font_size=11)
             st.plotly_chart(fig, width="stretch", theme="streamlit")
-    st.caption("Пунктир по вертикали — дата портфеля. Период — 60 дней до даты портфеля и до последней даты данных.")
+    st.caption("Вертикальная пунктирная линия — дата портфеля. На графиках показаны 60 дней до неё и период после "
+               "неё до последней доступной даты; заштрихованы зоны лестницы и триггер HY OAS из стратегии.")

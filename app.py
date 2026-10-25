@@ -63,18 +63,23 @@ def _compute(data, name, ov, prev_data, prev_name, prev_ov, corrections, cfg, _k
 def _sidebar(cfg):
     st.sidebar.header("Данные")
     cur = st.sidebar.file_uploader("Текущий портфель", type=FILE_TYPES, key="cur",
-                                   help="Excel (.xlsx, .xlsm, .xls) или CSV. Листы и колонки определяются по названиям и содержимому.")
+                                   help="Файл Excel (.xlsx, .xlsm, .xls) или CSV. Листы и колонки "
+                                        "определяются по названиям и содержимому, поэтому структура может отличаться "
+                                        "от примера.")
     prev = st.sidebar.file_uploader("Предыдущий портфель для сравнения (необязательно)", type=FILE_TYPES, key="prev",
-                                    help="Для сравнения портфелей и сигнала по расширению спредов.")
+                                    help="Портфель за прошлый период: с ним строится сравнение метрик и "
+                                         "позиций и ищутся бумаги с аномальным расширением спреда.")
     st.sidebar.download_button("Скачать шаблон файла (.xlsx)", build_template(), file_name="portfolio_template.xlsx",
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                               help="Пустой Excel с нужными листами и колонками. Требования — во вкладке «Методология».")
+                               help="Пустой Excel с листами и колонками, которые читает инструмент. "
+                                    "Требования к файлу описаны во вкладке «Методология».")
     sample = None
     samples = ([SAMPLE] if SAMPLE.exists() else []) + sorted((Path(__file__).parent / "samples").glob("*.*"))
     if cur is None and samples:
         choice = st.sidebar.selectbox("Или файл-пример", ["—"] + [p.name for p in samples], index=1,
-                                      help="Тот же портфель в других форматах: CSV, отчёт с разделами и рыночной стоимостью, "
-                                           "файл с нестандартными колонками.")
+                                      help="Тот же портфель в других форматах — CSV, отчёт с разделами и "
+                                           "рыночной стоимостью, файл с нестандартными колонками. Примеры показывают, "
+                                           "что инструмент читает файлы разной структуры.")
         sample = next((p for p in samples if p.name == choice), None)
     prev_sample = None
     if prev is None and samples:
@@ -93,7 +98,8 @@ def _sidebar(cfg):
             "duration_over_maturity_error": st.number_input("Дюрация > срока: порог ошибки, лет", 0.0, 2.0,
                                                             float(q["duration_over_maturity_error"]), 0.05),
         }
-        st.caption("Значения по умолчанию и их обоснование — в config.yaml.")
+        st.caption("Значения по умолчанию и их обоснование приведены в методологии (раздел «Допущения и "
+                   "пороги»).")
     c = cfg["concentration"]
     with st.sidebar.expander("Лимиты концентрации и допуски"):
         cov = {
@@ -107,7 +113,7 @@ def _sidebar(cfg):
         aov = {"allocation_gap_pp": st.number_input("Отклонение от целевой аллокации, п.п.", 0.0, 20.0,
                                                     float(cfg["analysis"]["allocation_gap_pp"]), 0.5),
                "fee": st.number_input("Комиссия, % годовых", 0.0, 5.0, cfg["analysis"]["fee"] * 100, 0.05) / 100}
-        st.caption("Лимит HY — сумма целей HY-сегментов на листе Allocation.")
+        st.caption("Лимит доли HY берётся как сумма целей HY-сегментов на листе Allocation.")
     sg = cfg["signals"]
     with st.sidebar.expander("Пороги сигналов по спредам"):
         sov = {
@@ -144,13 +150,14 @@ def main():
     st.title("Анализ портфеля еврооблигаций")
     data, name, (prev_data, prev_name), cfg = _sidebar(load_config())
     if data is None:
-        st.info("Файл портфеля — в панели слева. Порядок работы и требования к файлу — ниже.")
+        st.info("Для начала работы нужно загрузить файл портфеля в панели слева или выбрать файл-пример. Порядок "
+                "работы и требования к файлу описаны ниже.")
         _methodology_only(cfg)
         return
     try:
         snap = _load(data, name, ui_mapping.get_overrides(name))
     except LoadError as e:
-        st.error(f"Файл не прочитан: {e}")
+        st.error(f"Файл не прочитан. {e}")
         if e.detected.get("labels"):
             if ui_mapping.render(name, e.detected, expanded=True):
                 st.rerun()
@@ -168,7 +175,7 @@ def main():
         try:
             prev_snap = _load(prev_data, prev_name, ui_mapping.get_overrides(prev_name))
         except LoadError as e:
-            st.warning(f"Предыдущий портфель «{prev_name}» не прочитан: {e}")
+            st.warning(f"Предыдущий портфель «{prev_name}» не прочитан, поэтому сравнение не строится. {e}")
             prev_data = prev_name = None
     # Какой файл текущий (более поздний) — чтобы взять его поправки аналитика.
     cur_name = order_snapshots(snap, prev_snap)[0].source_name if prev_snap is not None else name
@@ -204,12 +211,20 @@ def main():
         k1.metric("Ошибки", s["Ошибка"])
         k2.metric("Предупреждения", s["Предупреждение"])
         k3.metric("Инфо", s["Инфо"])
+        st.caption("Ошибки искажают расчёт, и их стоит исправить — в файле или через «Поправки аналитика» ниже. "
+                   "Предупреждения требуют проверки, но на расчёт влияют меньше. Информационные сообщения "
+                   "подтверждают, что данные сходятся, или поясняют, как прочитан файл.")
         levels = st.multiselect("Показать уровни", list(LEVEL_COLORS), default=["Ошибка", "Предупреждение"])
         view = issues[issues["Уровень"].isin(levels)]
-        styled = view.style.apply(
-            lambda r: [f"background-color: {LEVEL_COLORS[r['Уровень']]}; color: #1a1a1a"] * len(r), axis=1)
-        st.dataframe(styled, hide_index=True, width="stretch",
-                     column_config={"Комментарий": st.column_config.TextColumn(width="large")})
+        box = {"Ошибка": st.error, "Предупреждение": st.warning, "Инфо": st.info}
+        for _, r in view.iterrows():
+            where = "" if r["Позиция"] == "Портфель" else f"{r['Позиция']} · "
+            box[r["Уровень"]](f"**{where}{r['Категория']}.** {r['Комментарий']}")
+        with st.expander("Таблица проверок"):
+            styled = view.style.apply(
+                lambda r: [f"background-color: {LEVEL_COLORS[r['Уровень']]}; color: #1a1a1a"] * len(r), axis=1)
+            st.dataframe(styled, hide_index=True, width="stretch",
+                         column_config={"Комментарий": st.column_config.TextColumn(width="large")})
         st.download_button("Скачать таблицу проверок (CSV)", issues.to_csv(index=False).encode("utf-8-sig"),
                            file_name="quality_checks.csv", mime="text/csv")
         st.divider()
@@ -223,18 +238,19 @@ def main():
 
     with tab_g:
         if res.gspread is None:
-            st.warning("Нет кривой UST на дату портфеля, G-spread не пересчитан.")
+            st.warning("Кривая UST на дату портфеля не получена, поэтому G-spread не пересчитан. Остальные разделы "
+                       "работают по данным файла.")
         else:
             ui_gspread.render(res.gspread, cfg)
 
     with tab_s:
         if cfg["signals"]["spread_source"] == "recomputed" and res.gspread is None:
-            st.warning("Пересчёта G-spread нет, сигналы — по G-spread из файла.")
+            st.warning("Пересчитанного G-spread нет, поэтому сигналы построены по G-spread из файла.")
         ui_signals.render(res.signals, res.spread_changes, cfg, prev_snap)
 
     with tab_r:
         if res.rules is None:
-            st.warning("Нет рыночных данных, правила добора не проверены.")
+            st.warning("Рыночные данные не получены, поэтому правила добора не проверены.")
         else:
             ui_rules.render(res.rules, mk, snap.as_of)
 
@@ -251,7 +267,8 @@ def main():
 
     with tab_p:
         if res.corrections is not None and (res.corrections["Статус"] == "применена").any():
-            st.caption("С поправками аналитика. Исходные значения — в журнале поправок на вкладке «1. Качество данных».")
+            st.caption("Позиции показаны с учётом поправок аналитика; исходные значения приведены в журнале "
+                       "поправок на вкладке «1. Качество данных».")
         cols = ["num", "sleeve", "weight", "isin", "issuer", "coupon", "maturity", "name_maturity", "ytm",
                 "gspread", "mod_duration", "region", "country", "sector", "rating", "credit_bucket",
                 "instrument_type"]

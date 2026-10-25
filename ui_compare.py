@@ -5,6 +5,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from core import narrative as N
 from core.snapshots import Comparison
 
 C1, C2, C3 = "#2a78d6", "#eb6834", "#1baf7a"
@@ -48,16 +49,18 @@ def _delta(v, kind):
 
 def render(cmp: Comparison | None, notes: list):
     if cmp is None:
-        st.info("Нужен предыдущий портфель (панель слева): здесь будет сравнение метрик, аллокации, позиций "
-                "и рейтингов и разложение изменения YTM портфеля.")
+        st.info("Для сравнения нужен предыдущий портфель — его можно загрузить в панели слева. Тогда здесь "
+                "появятся изменения метрик, аллокации, позиций и рейтингов, а также разложение изменения доходности "
+                "портфеля на рыночные и собственные факторы.")
         return
     for n in notes + cmp.notes:
         st.info(n)
     pos = cmp.positions
     n_new, n_rem = int((pos["Статус"] == "новая").sum()), int((pos["Статус"] == "выбыла").sum())
-    st.caption(f"Портфель на {_d(cmp.cur_date)} против {_d(cmp.prev_date)}. Сопоставление по ISIN, затем по названию, "
-               f"затем по эмитенту и погашению: осталось {int((pos['Статус'] == 'осталась').sum())}, "
-               f"новых {n_new}, выбыло {n_rem}.")
+    st.markdown(N.comparison(cmp))
+    st.caption(f"Портфель на {_d(cmp.cur_date)} сравнивается с портфелем на {_d(cmp.prev_date)}. Бумаги "
+               f"сопоставлены по ISIN, а если его нет — по названию или по эмитенту и дате погашения. В портфеле "
+               f"осталось {int((pos['Статус'] == 'осталась').sum())} бумаг, добавлено {n_new}, выбыло {n_rem}.")
 
     mt = cmp.metrics.set_index("key")
     k = st.columns(4)
@@ -92,8 +95,10 @@ def render(cmp: Comparison | None, notes: list):
                       xaxis=dict(ticksuffix=" бп", gridcolor="rgba(137,135,129,0.25)", zeroline=False),
                       yaxis=dict(autorange="reversed"))
     st.plotly_chart(fig, width="stretch", theme="streamlit")
-    st.caption(f"Изменение YTM портфеля: {total:+.1f} бп, сумма вкладов. «Рынок UST» — сдвиг кривой Treasury "
-               "между датами портфелей на срок каждой бумаги, по весам прошлого портфеля.")
+    tot = f"{total:+.1f}".replace(".", ",")
+    st.caption(f"Доходность портфеля изменилась на {tot} б.п.; это сумма вкладов на графике. «Рынок UST» — "
+               "сдвиг кривой Treasury между датами портфелей на срок каждой бумаги, взвешенный по долям прошлого "
+               "портфеля; остальные компоненты отражают изменения спредов и состава портфеля.")
     with st.expander("Разложение G-spread и дюрации"):
         for key in ("G-spread, бп", "Mod. duration, лет"):
             st.markdown(f"**{key}**")
@@ -101,7 +106,7 @@ def render(cmp: Comparison | None, notes: list):
                          column_config={"Вклад": st.column_config.NumberColumn(format="%+.2f")})
 
     if cmp.allocation is not None:
-        st.subheader("Аллокация по sleeve")
+        st.subheader("Аллокация по сегментам")
         al = cmp.allocation
         fig = go.Figure()
         for name, col, color in (("Ранее", "Ранее", C1), ("Сейчас", "Текущее", C2), ("Цель", "Цель", C3)):
@@ -145,13 +150,13 @@ def render(cmp: Comparison | None, notes: list):
     with c1:
         st.markdown("**Изменения рейтингов**")
         if cmp.rating_changes.empty:
-            st.caption("Рейтинги не менялись.")
+            st.caption("За период рейтинги бумаг не менялись.")
         else:
             st.dataframe(cmp.rating_changes, hide_index=True, width="stretch")
     with c2:
         st.markdown("**Изменения статуса лимитов концентрации**")
         if cmp.concentration_changes.empty:
-            st.caption("Статусы лимитов не изменились.")
+            st.caption("За период статусы лимитов концентрации не изменились.")
         else:
             cc = cmp.concentration_changes.copy()
             cc["Ранее"], cc["Сейчас"] = cc["Ранее"] * 100, cc["Сейчас"] * 100

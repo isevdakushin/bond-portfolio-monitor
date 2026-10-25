@@ -11,7 +11,8 @@ def render(rep: Report, file_stem: str):
     c1, c2 = st.columns([2, 3])
     c1.download_button("Скачать отчёт (HTML)", rep.html.encode("utf-8"), file_name=f"report_{file_stem}.html",
                        mime="text/html", type="primary")
-    c2.markdown(f"**Версия текста: {rep.version}** — текст собран по шаблонам из рассчитанных значений, без LLM. "
-                "Каждое число в отчёте берётся из расчёта, это проверяет автотест.")
-    st.caption("PDF — через печать скачанного файла из браузера (A4). Ниже — предпросмотр.")
+    c2.markdown(f"**Версия текста: {rep.version}.** Записка собрана по шаблонам из рассчитанных значений, "
+                "без LLM; каждое число в ней берётся из расчёта, и это проверяет автотест.")
+    st.caption("Чтобы получить PDF, скачанный файл нужно открыть в браузере и нажать «Печать / PDF» (формат A4). "
+               "Ниже — предпросмотр записки.")
     components.html(rep.html, height=1400, scrolling=True)

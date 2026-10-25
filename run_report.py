@@ -25,7 +25,7 @@ from core.snapshots import compare as compare_snapshots
 from core.snapshots import inherit_targets, order_snapshots
 from core.signals import relative_value, spread_changes
 from core.market import check_file_claims, curves_between, load_market
-from core import corrections
+from core import corrections, narrative
 from core.config import load_config
 from core.loader import LoadError, load_snapshot
 from core.quality import run_checks, summary
@@ -141,8 +141,7 @@ def main(argv=None):
             print(f"  {r['Правило']}: {r['Статус']} | на дату портфеля {r['На дату портфеля']} | сейчас {r['Сейчас']} | "
                   f"касание: {r['Касание с даты портфеля']}")
         for a in ev["actions"]:
-            print(f"  ДЕЙСТВИЕ [{a['Приоритет']}]: {a['Действие']}. Основание: {a['Основание']}. "
-                  f"Финансирование: {a['Финансирование']}")
+            print(f"  ДЕЙСТВИЕ [{a['Приоритет']}]: {narrative.action(a)}")
 
         if mk.curve_asof is not None:
             win = cfg["gspread"]["implied_date_window_days"]

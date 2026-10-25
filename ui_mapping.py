@@ -26,8 +26,9 @@ def render(name, detected: dict, as_of=None, expanded=False):
     cols = detected.get("columns", {})
     current = get_overrides(name)
     with st.expander("Распознавание файла: лист, колонки, дата", expanded=expanded):
-        st.caption(f"Лист с позициями: «{detected.get('sheet', '—')}», строка заголовков: "
-                   f"{detected.get('header_row', '—')}. Ошибки распознавания исправляются здесь, затем «Применить».")
+        st.caption(f"Позиции прочитаны с листа «{detected.get('sheet', '—')}», заголовки — в строке "
+                   f"{detected.get('header_row', '—')}. Если лист, колонка или дата определены неверно, их можно "
+                   "исправить здесь и нажать «Применить»; расчёт сразу обновится.")
         with st.form(f"map::{name}"):
             sheets = detected.get("sheets", [])
             sheet = st.selectbox("Лист с позициями", sheets,
@@ -41,8 +42,8 @@ def render(name, detected: dict, as_of=None, expanded=False):
                 label = COLUMN_LABELS[key] + (" *" if key in ESSENTIAL_KEYS else "")
                 chosen[key] = grid[i % 3].selectbox(label, options,
                                                     index=options.index(cur) if cur in options else 0, key=f"{name}-{key}")
-            st.caption("Звёздочка (\\*): нужны YTM и хотя бы по одному полю из пар «Issuer / ISIN» "
-                       "и «Weight / Market value».")
+            st.caption("Звёздочкой (\\*) отмечены обязательные поля: без YTM и хотя бы одного поля из пар "
+                       "«Issuer / ISIN» и «Weight / Market value» портфель проанализировать нельзя.")
             date_val = st.date_input("Дата портфеля (если не найдена в файле или неверна)",
                                      value=current.get("as_of") or as_of, format="DD.MM.YYYY")
             applied = st.form_submit_button("Применить")

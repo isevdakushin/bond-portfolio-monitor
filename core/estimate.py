@@ -76,7 +76,8 @@ def estimate(snap: Snapshot, cfg: dict, fred_key: str | None, curve_asof: Curve 
             s, meta = loader(sid)
             loaded[b] = (s * 100, meta, sid)            # проценты -> бп
         except (MarketDataError, KeyError, ValueError) as e:
-            notes.append(f"Индекс {INDEX_NAMES.get(b, b)} ({sid}) недоступен: {e}. По этим бумагам учтён только сдвиг UST.")
+            notes.append(f"Индекс {INDEX_NAMES.get(b, b)} ({sid}) недоступен ({e}). По бумагам, привязанным к нему, "
+                         "учтено только изменение ставок UST, поэтому их оценка неполная.")
     # Дата оценки: последняя дата, на которую есть и кривая, и все индексы.
     last_dates = [curve_latest.date] + [s.index.max() for s, _, _ in loaded.values()]
     est_date = min(last_dates)
@@ -119,6 +120,8 @@ def estimate(snap: Snapshot, cfg: dict, fred_key: str | None, curve_asof: Curve 
                  "gs_est": ws("G-spread (оценка)"), "d_ust_bp": ws("Δ UST, бп"), "d_oas_bp": ws("Δ OAS индекса, бп"),
                  "price": ws("Ценовой эффект"), "carry": ws("Купонный доход"), "total": ws("Итого доходность"),
                  "days": days}
-    notes.append("Оценка по индексам, не котировки: спред бумаги меняется как OAS её индекса; OAS и G-spread — "
-                 "разные меры, сравниваются только изменения; выпуклость не учтена.")
+    notes.append("Это оценка по индексам, а не котировки бумаг: предполагается, что спред бумаги меняется так "
+                 "же, как OAS её индекса ICE BofA. OAS и G-spread — разные меры, поэтому используются только "
+                 "изменения OAS, а не его уровень. Выпуклость не учитывается, поэтому при больших сдвигах ставок "
+                 "оценка цены менее точна.")
     return Estimate(as_of=snap.as_of, est_date=est_date, positions=pos, indices=indices, portfolio=portfolio, notes=notes)
