@@ -150,8 +150,10 @@ def main():
     st.title("Анализ портфеля еврооблигаций")
     data, name, (prev_data, prev_name), cfg = _sidebar(load_config())
     if data is None:
-        st.info("Для начала работы нужно загрузить файл портфеля в панели слева или выбрать файл-пример. Порядок "
-                "работы и требования к файлу описаны ниже.")
+        has_samples = SAMPLE.exists() or any((Path(__file__).parent / "samples").glob("*.*"))
+        st.info("Для начала работы нужно загрузить файл портфеля в панели слева"
+                + (" или выбрать файл-пример" if has_samples else "")
+                + ". Порядок работы и требования к файлу описаны ниже.")
         _methodology_only(cfg)
         return
     try:
